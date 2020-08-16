@@ -4,7 +4,6 @@ import logging
 import logging.config
 import json
 from PyQt5 import QtWidgets as qtw
-import resources_rc
 
 from MainWindow import MainWindow
 from Console import Console
