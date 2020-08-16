@@ -1,0 +1,14 @@
+2020-08-15 17:53:45 INFO >> line  19 | InOutWindow.__init__  >> Started
+2020-08-15 18:07:23 INFO >> line  19 | InOutWindow.__init__  >> Started
+2020-08-15 18:08:15 INFO >> line  19 | InOutWindow.__init__  >> Started
+2020-08-15 18:12:54 INFO >> line  19 | InOutWindow.__init__  >> Started
+2020-08-15 20:08:15 INFO >> line  19 | InOutWindow.__init__  >> Started
+2020-08-15 20:08:55 INFO >> line  19 | InOutWindow.__init__  >> Started
+2020-08-15 20:10:37 CRIT >> line  83 | MainWindow.barcode_scanned Invalid Barcode
+2020-08-15 20:10:41 INFO >> line  19 | InOutWindow.__init__  >> Started
+2020-08-15 20:11:55 INFO >> line  19 | InOutWindow.__init__  >> Started
+2020-08-15 20:12:10 INFO >> line  19 | InOutWindow.__init__  >> Started
+2020-08-15 20:12:49 INFO >> line  19 | InOutWindow.__init__  >> Started
+2020-08-15 20:13:41 INFO >> line  19 | InOutWindow.__init__  >> Started
+2020-08-15 20:13:56 INFO >> line  19 | InOutWindow.__init__  >> Started
+2020-08-15 20:14:01 INFO >> line  19 | InOutWindow.__init__  >> Started

@@ -1,0 +1,14 @@
+QT Designer
+* To convert the .ui file to a .py file
+* Type the following at the command prompt in this directory
+  pyuic5 Test.ui -o Test.py
+* For an executable file, type
+  pyuic5 -x Test.ui -o Test.py
+
+QT Resources
+pyrcc5 resources.qrc -o resources_rc.py
+
+SQL statements to store dates
+--INSERT INTO activity(id, checkin) VALUES ('0077', DATETIME("NOW", "LOCALTIME"))
+--INSERT INTO activity(id, checkin) VALUES ('0088', strftime('%s','now'))
+--SELECT DATETIME(checkin, "UNIXEPOCH", "LOCALTIME") FROM activity WHERE id='0077'

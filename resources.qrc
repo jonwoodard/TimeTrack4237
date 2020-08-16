@@ -1,0 +1,8 @@
+<!DOCTYPE RCC><RCC version="1.0">
+<qresource>
+    <file alias="checkin.png">images/checkin.png</file>
+    <file alias="checkout.png">images/checkout.png</file>
+    <file alias="TimeTrackIcon.png">images/TimeTrackIcon.png</file>
+    <file alias="TimeTrackLogo.png">images/TimeTrackLogo.png</file>
+</qresource>
+</RCC>
