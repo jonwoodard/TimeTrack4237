@@ -15,6 +15,8 @@ class Ui_NumberPadDialogBox(object):
     def setupUi(self, NumberPadDialogBox):
         NumberPadDialogBox.setObjectName("NumberPadDialogBox")
         NumberPadDialogBox.resize(400, 500)
+        NumberPadDialogBox.setMinimumSize(QtCore.QSize(400, 500))
+        NumberPadDialogBox.setMaximumSize(QtCore.QSize(400, 500))
         self.verticalLayout = QtWidgets.QVBoxLayout(NumberPadDialogBox)
         self.verticalLayout.setObjectName("verticalLayout")
         self.title = QtWidgets.QLabel(NumberPadDialogBox)

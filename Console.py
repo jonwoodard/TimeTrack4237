@@ -13,10 +13,10 @@ class Console:
 
     def __init__(self, db_filename):
         self.__db_manager = DatabaseManager(db_filename)
-        self.__db_manager.check_database()
+        self.__db_manager._DatabaseManager__check_database()
 
     def import_student(self, csv_filename):
-        """This method is used for testing purposes to import data from a csv files with students."""
+        """This method is used for testing purposes to import data from a csv file with students."""
 
         with open(csv_filename, 'r') as fh:
             csv_reader = csv.reader(fh)
@@ -24,7 +24,7 @@ class Console:
                 self.__db_manager.new_record('student', tuple(record))
 
     def import_admin(self, csv_filename):
-        """This method is used for testing purposes to import data from a csv files with admins."""
+        """This method is used for testing purposes to import data from a csv file with admins."""
 
         with open(csv_filename, 'r') as fh:
             csv_reader = csv.reader(fh)
@@ -32,7 +32,7 @@ class Console:
                 self.__db_manager.new_record('admin', tuple(record))
 
     def import_activity(self, csv_filename):
-        """This method is used for testing purposes to import data from a csv files with activities."""
+        """This method is used for testing purposes to import data from a csv file with activities."""
 
         with open(csv_filename, 'r') as fh:
             csv_reader = csv.reader(fh)
@@ -40,15 +40,21 @@ class Console:
                 self.__db_manager.new_record('activity', tuple(record))
 
     def calculate_check_in_time(self, hrs, mins=0):
-        """This method was used for testing purposes to determine the check in time for students.
-         It calculates the check in time for a student who checked in a given number of hours and minutes ago."""
+        """
+        This method is used for testing purposes to determine the check in time for students.
+        It calculates the check in time for a student who checked in a given number of hours and minutes ago.
+
+        :param hrs:
+        :param mins:
+        :return:
+        """
 
         current_time = datetime.now()
         pre_date = current_time - timedelta(hours=hrs, minutes=mins)
         return pre_date.isoformat(sep=' ', timespec='seconds')
 
     def sample_checkin(self):
-        """This method was used for testing purposes to check in a few students."""
+        """This method is used for testing purposes to check in a few students."""
 
         self.__db_manager.checkin_student('0202', self.calculate_check_in_time(3))
         self.__db_manager.checkin_student('0404', self.calculate_check_in_time(2, 30))
@@ -61,15 +67,14 @@ class Console:
 
     def main_menu(self):
         """This method displays the main menu on the console."""
+        user_data = tuple()
 
         while True:
             print('\nMAIN MENU')
-            print('1. Check In')
-            print('2. Check Out')
-            print('3. Get Total Hours')
-            print('4. Get Hours List')
-            print('5. Get Checked In List')
-            print('6. Admin Menu')
+            print('1. Scan Barcode')
+            print('2. Display Checked In List')
+            print('3. Admin Menu')
+            print('8. Upload Google Sheet')
             print('9. Exit')
             choice = input('Choice? ')
 
@@ -77,39 +82,71 @@ class Console:
 
             if choice == '1':
                 barcode = input('Enter barcode: ')
+                success, message, user_data = self.__db_manager.login_user(barcode)
+                if user_data[0] == 'student':
+                    self.student_menu(user_data)
+                elif user_data[0] == 'admin':
+                    pin = input('Enter pin: ')
+                    success, message, valid_pin = self.__db_manager.check_pin(barcode, pin)
+                    if valid_pin:
+                        self.admin_menu(barcode)
+                    else:
+                        print(message)
+                else:
+                    print(message)
+
+            elif choice == '2':
+                _, _, data = self.__db_manager.get_checked_in_list()
+                self.display_list(data, 'Barcode Name')
+
+            elif choice == '3':
+                self.admin_menu(user_data)
+
+            elif choice == '8':
+                self.__db_manager.upload_student_data_to_google_sheet()
+
+            elif choice == '9':
+                break
+
+    def student_menu(self, user_data):
+        """This method displays the student menu on the console."""
+        barcode = user_data[2]
+
+        while True:
+            print('\nSTUDENT MENU')
+            print('1. Check In')
+            print('2. Check Out')
+            print('3. Get Total Hours')
+            print('4. Get Hours List')
+            print('9. Exit')
+            choice = input('Choice? ')
+
+            logger.debug(f' >> Student menu choice = {choice}')
+
+            if choice == '1':
                 success, message, student_data = self.__db_manager.get_student_data(barcode)
                 success, msg = self.__db_manager.checkin_student(barcode)
                 print(student_data[0], ':  ', msg)
 
             elif choice == '2':
-                barcode = input('Enter barcode: ')
                 success, message, student_data = self.__db_manager.get_student_data(barcode)
                 success, msg = self.__db_manager.checkout_student(barcode)
                 print(student_data[0], ':  ', msg)
 
             elif choice == '3':
-                barcode = input('Enter barcode: ')
                 success, message, student_data = self.__db_manager.get_student_data(barcode)
                 print(student_data[0], ':  Total Hours =', student_data[2])
 
             elif choice == '4':
-                barcode = input('Enter barcode: ')
                 success, message, student_data = self.__db_manager.get_student_data(barcode)
                 success, message, data = self.__db_manager.get_student_hours_table(barcode)
                 print(student_data[0], ': ', student_data[1])
                 self.display_table(data, ('Day', 'Date', 'Hours'))
 
-            elif choice == '5':
-                success, message, data = self.__db_manager.get_checked_in_list()
-                self.display_list(data, 'Barcode Name')
-
-            elif choice == '6':
-                self.admin_menu()
-
             elif choice == '9':
                 break
 
-    def admin_menu(self):
+    def admin_menu(self, user_data):
         """This method displays the admin menu."""
 
         while True:
@@ -131,6 +168,9 @@ class Console:
 
             elif choice == '3':
                 self.admin_table_menu()
+
+            elif choice == '4':
+                self.testing_data_menu()
 
             elif choice == '9':
                 break

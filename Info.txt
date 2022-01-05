@@ -1,3 +1,6 @@
+EXIT
+* Press Alt + F4
+
 QT Designer
 * To convert the .ui file to a .py file
 * Type the following at the command prompt in this directory

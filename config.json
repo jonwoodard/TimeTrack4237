@@ -1,0 +1,43 @@
+{
+    "logging config": {
+        "version": 1,
+        "loggers": {
+            "TimeTrack": {
+                "level": "INFO",
+                "handlers": [
+                    "console_handler",
+                    "file_handler"
+                ]
+            }
+        },
+        "handlers": {
+            "console_handler": {
+                "level": "WARNING",
+                "formatter": "info",
+                "class": "logging.StreamHandler"
+            },
+            "file_handler": {
+                "level": "INFO",
+                "formatter": "error",
+                "class": "logging.FileHandler",
+                "filename": "files/errorlogger.log"
+            }
+        },
+        "formatters": {
+            "info": {
+                "format": "%(asctime)s %(levelname)4.4s >> line %(lineno)3s | %(module)s.%(funcName)s %(msg)s",
+                "datefmt": "%Y-%m-%d %H:%M:%S"
+            },
+            "error": {
+                "format": "%(asctime)s %(levelname)4.4s >> line %(lineno)3s | %(module)s.%(funcName)s %(msg)s",
+                "datefmt": "%Y-%m-%d %H:%M:%S"
+            }
+        }
+    },
+
+    "google config": {
+        "service account": "credentials/timetrack4237-1597581877356-3520afa3c807.json",
+        "spreadsheet url": "https://docs.google.com/spreadsheets/d/1VcbaNq8Cy8LKNns1tbURN2HoRnIKh1OU2jVC8qc1nDM",
+        "worksheet name": "2020-2021"
+    }
+}

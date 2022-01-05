@@ -10,73 +10,96 @@ from Console import Console
 
 DATABASE_FILENAME = 'files/timetrack.db'
 LOGGER_FILENAME = 'files/errorlogger.log'
-LOG_CONFIG_FILENAME = 'files/config.json'
+CONFIG_FILENAME = 'config.json'
 logger = logging.getLogger('TimeTrack')
 
 
-def logging_setup():
-    """This function is used to set up logging of errors and debugging information."""
-
+def config_file_setup() -> dict:
     # This is the default logging configuration. It is used later if the configuration files is missing or corrupt.
-    logging_config = {
-        'version': 1,
-        'loggers': {
-            'TimeTrack': {
-                'level': 'DEBUG',
-                'handlers': ['console_handler', 'file_handler']
+    config = {
+        'logging config': {
+            'version': 1,
+            'loggers': {
+                'TimeTrack': {
+                    'level': 'DEBUG',
+                    'handlers': ['console_handler', 'file_handler']
+                }
+            },
+            'handlers': {
+                'console_handler': {
+                    'level': 'DEBUG',
+                    'formatter': 'info',
+                    'class': 'logging.StreamHandler'
+                },
+                'file_handler': {
+                    'level': 'DEBUG',
+                    'formatter': 'error',
+                    'class': 'logging.FileHandler',
+                    'filename': LOGGER_FILENAME
+                }
+            },
+            'formatters': {
+                'info': {
+                    'format': '%(asctime)s %(levelname)4.4s >> line %(lineno)3s | %(module)s.%(funcName)s %(msg)s',
+                    'datefmt': '%Y-%m-%d %H:%M:%S'
+                },
+                'error': {
+                    'format': '%(asctime)s %(levelname)4.4s >> line %(lineno)3s | %(module)s.%(funcName)s %(msg)s',
+                    'datefmt': '%Y-%m-%d %H:%M:%S'
+                }
             }
         },
-        'handlers': {
-            'console_handler': {
-                'level': 'DEBUG',
-                'formatter': 'info',
-                'class': 'logging.StreamHandler'
-            },
-            'file_handler': {
-                'level': 'DEBUG',
-                'formatter': 'error',
-                'class': 'logging.FileHandler',
-                'filename': LOGGER_FILENAME
-            }
-        },
-        'formatters': {
-            'info': {
-                'format': '%(asctime)s %(levelname)4.4s >> line %(lineno)3s | %(module)s.%(funcName)s %(msg)s',
-                'datefmt': '%Y-%m-%d %H:%M:%S'
-            },
-            'error': {
-                'format': '%(asctime)s %(levelname)4.4s >> line %(lineno)3s | %(module)s.%(funcName)s %(msg)s',
-                'datefmt': '%Y-%m-%d %H:%M:%S'
-            }
+        'google config': {
+            'service account': 'credentials/timetrack4237-1597581877356-3520afa3c807.json',
+            'spreadsheet url': 'https://docs.google.com/spreadsheets/d/1VcbaNq8Cy8LKNns1tbURN2HoRnIKh1OU2jVC8qc1nDM',
+            'worksheet name': '2020-2021'
         }
     }
 
+    return config
+
+
+def logging_setup() -> dict:
+    """
+    This method is used to set up logging of errors and debugging information.
+    It grabs the data from the config file, if it exists. Otherwise it creates the config file.
+
+    :return: dictionary of the logging configuration
+    """
+
+    config = config_file_setup()
+    logging_config = config['logging config']
+
     create_file = False
     # Check if the logging configuration files exists.
-    if os.path.isfile(LOG_CONFIG_FILENAME):
+    if os.path.isfile(CONFIG_FILENAME):
 
         # Open the files if it exists.
-        with open(LOG_CONFIG_FILENAME, 'r') as fh:
+        with open(CONFIG_FILENAME, 'r') as fh:
             try:
-                # Read the json string from the files into the logging_config dictionary.
-                logging_config = json.load(fh)
+                # Read the json string from the file into the logging_config dictionary.
+                config = json.load(fh)
+                logging_config = config['logging config']
             except:
-                # If there is an error reading from the files, then the files will be recreated below.
+                # If there is an error reading from the file, then the files will be recreated below.
                 create_file = True
     else:
         # If the logging configuration files does not exist, then the files will be created below.
         create_file = True
 
-    # If the files does not exist or the files is corrupt, then recreate the files.
+    # If the files does not exist or the file is corrupt, then recreate the file.
     if create_file:
-        with open(LOG_CONFIG_FILENAME, 'w+') as fh:
+        with open(CONFIG_FILENAME, 'w+') as fh:
             json.dump(logging_config, fh, indent=4)
 
     return logging_config
 
 
-def main():
-    """This is the main function that starts the program."""
+def main() -> None:
+    """
+    This is the main method that starts the program.
+    :return: None
+    """
 
     # Set up the logging of errors and debugging information
     logging_config = logging_setup()
