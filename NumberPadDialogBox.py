@@ -1,11 +1,7 @@
-import logging
-
 from PyQt5 import QtWidgets as qtw
 from PyQt5 import QtCore as qtc
 
 from gui.Ui_NumberPadDialogBox import Ui_NumberPadDialogBox
-
-logger = logging.getLogger('TimeTrack.KeypadDialogBox')
 
 
 class NumberPadDialogBox(qtw.QDialog, Ui_NumberPadDialogBox):
@@ -43,8 +39,9 @@ class NumberPadDialogBox(qtw.QDialog, Ui_NumberPadDialogBox):
         self.buttonBox.accepted.connect(lambda: self.button_clicked('OK'))
         self.buttonBox.rejected.connect(lambda: self.button_clicked('Cancel'))
 
+        # Use textChanged to emit the signal whenever the text is changed, including when setText() is called.
+        self.entry.textChanged.connect(self.entry_text_edited)
         self.entry.returnPressed.connect(lambda: self.button_clicked('Enter'))
-        self.entry.textEdited.connect(self.entry_text_edited)
 
         self.show()
 
@@ -59,19 +56,22 @@ class NumberPadDialogBox(qtw.QDialog, Ui_NumberPadDialogBox):
         if button_name in [str(x) for x in range(10)]:       # buttons '0' through '9'
             entry = self.entry.text()
             self.entry.setText(entry + button_name)
+            self.entry.setFocus()
+
         elif button_name == 'Clear':
             self.entry.clear()
             self.entry.setFocus()
+
         elif button_name in ['OK', 'Enter']:
             entry = self.entry.text() or ''
             self.window_closed.emit(entry)
             self.close()
+
         elif button_name == 'Cancel':
             self.entry.clear()
             self.entry.setFocus()
             self.window_closed.emit('')
             self.close()
-
 
     @qtc.pyqtSlot()
     def entry_text_edited(self) -> None:
@@ -83,6 +83,7 @@ class NumberPadDialogBox(qtw.QDialog, Ui_NumberPadDialogBox):
         if self.entry.text():
             self.buttonBox.button(qtw.QDialogButtonBox.Ok).setEnabled(True)
             self.clear.setEnabled(True)
+
         else:
             self.buttonBox.button(qtw.QDialogButtonBox.Ok).setEnabled(False)
             self.clear.setEnabled(False)

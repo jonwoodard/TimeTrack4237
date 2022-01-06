@@ -1,4 +1,6 @@
-import logging
+import csv
+import os
+
 from PyQt5 import QtWidgets as qtw
 from PyQt5 import QtCore as qtc
 
@@ -8,21 +10,20 @@ from AdminWindow import AdminWindow
 from DatabaseManager import DatabaseManager
 from NumberPadDialogBox import NumberPadDialogBox
 
-logger = logging.getLogger('TimeTrack.MainWindow')
-
 
 class MainWindow(qtw.QWidget, Ui_MainWindow):
     """The Main Window contains a title, a message, an input box, and the 'Checked In' list."""
 
-    def __init__(self, db_filename: str):
+    def __init__(self, filename: str):
         super(MainWindow, self).__init__()
         self.setupUi(self)
         self.setWindowModality(qtc.Qt.ApplicationModal)  # block input to all other windows
         self.setWindowFlag(qtc.Qt.Dialog)  # dialog box without min or max buttons
         self.setWindowFlag(qtc.Qt.FramelessWindowHint)  # borderless window that cannot be resized
 
-        self.__db_filename = db_filename
-        self.__db_manager = DatabaseManager(self.__db_filename)
+        self.__filename = filename
+
+        self.__db_manager = DatabaseManager(self.__filename)
 
         self.__timer = qtc.QTimer()       # a timer to display messages for a designated amount of time
         self.__timer.setSingleShot(True)
@@ -58,6 +59,47 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
         #    self.show()
         #else:
         self.showFullScreen()
+        self.check_database()  # check if the database file exists after the main window displays
+
+    def check_database(self) -> None:
+        # Check if the database file exists.
+        if not os.path.isfile(self.__filename):
+            text = 'The database file "' + self.__filename + '" is missing.'
+            result = self.__display('Database File Missing', text,
+                                    'Would you like to create it now?', '', qtw.QMessageBox.Yes | qtw.QMessageBox.No)
+
+            if result == qtw.QMessageBox.Yes:
+                # Create the database file, along with tables, indexes, and triggers.
+                success, message, counter, total = self.__db_manager.create_database()
+
+                if success:
+                    # Ask if the user wants to import data.
+                    text = 'The database has been created successfully, but contains no student records.'
+                    result = self.__display('Import Data', text,
+                                            'Would you like to import student records from a csv file?',
+                                            '', qtw.QMessageBox.Yes | qtw.QMessageBox.No)
+
+                    if result == qtw.QMessageBox.Yes:
+                        # Let the user select the file to import.
+                        csv_filename, _ = qtw.QFileDialog.getOpenFileName(self, 'Open a file', os.getcwd(), 'csv (*.csv)')
+                        _, file_extension = os.path.splitext(csv_filename)
+                        if file_extension == '.csv':
+
+                            # The with ... as statement will open the file and close the file at the end.
+                            with open(csv_filename, 'r') as fh:
+                                csv_reader = csv.reader(fh)
+                                counter = 0
+                                for record in csv_reader:
+                                    self.__db_manager.new_record('student', tuple(record))
+                                    counter += 1
+
+                                self.__display('Import', 'Import complete: ' + str(counter) + ' records imported')
+                else:
+                    text = 'Only created ' + str(counter) + ' out of ' + str(total) + ' database objects.'
+                    self.__display('Database Error', text)
+
+            else:
+                self.__display('Database Error', 'This application requires a database file.')
 
     @qtc.pyqtSlot(str)
     def barcode_scanned(self, barcode: str) -> None:
@@ -69,14 +111,13 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
         :param barcode: the barcode that was scanned
         :return: None
         """
-        logger.debug(f'({barcode}) >> Started')
 
         success, message, barcode_type = self.__db_manager.check_barcode(barcode)
         # The "barcode_type" is either a Student, Admin, or Invalid.
 
         if barcode_type == 'Student':
             # Display the Check In/Out window.
-            in_out_window = InOutWindow(self, self.__db_filename, barcode)
+            in_out_window = InOutWindow(self, self.__filename, barcode)
 
             # Refresh the Main window when the Check In/Out window closes.
             # The "window_closed" signal emits a "message" to display on the Main window for 3 seconds.
@@ -97,7 +138,10 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
         elif barcode_type == 'Invalid':
             # Display an error message on the Main window for an Invalid barcode.
             self.refresh_window('Invalid Barcode. Try Again.', 3)
-            logger.critical('Invalid Barcode')
+
+        elif barcode_type == 'Error':
+            # Display an error message on the Main window because of a Database error.
+            self.refresh_window('Database Error. Contact the administrator.', 3)
 
     @qtc.pyqtSlot(str, str)
     def admin_pin_dialog_box_closed(self, barcode: str, pin: str) -> None:
@@ -109,7 +153,6 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
         :param pin: the Admin PIN entered
         :return: None
         """
-        logger.debug(f'({barcode}, {pin} >> Started')
 
         if pin:
 
@@ -117,7 +160,7 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
             success, message, correct_pin = self.__db_manager.check_pin(barcode, pin)
             if correct_pin:
                 # Display the Admin window since the Admin PIN is correct.
-                admin_window = AdminWindow(self, self.__db_filename)
+                admin_window = AdminWindow(self, self.__filename, barcode)
                 admin_window.window_closed.connect(lambda: self.refresh_window('', 0))
             else:
                 # Display an error message on the Main window since the PIN was incorrect.
@@ -134,7 +177,6 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
         :param seconds: the duration of the message
         :return: None
         """
-        logger.debug(f'({message}, {seconds}) >> Started')
 
         # Clear the barcode that was scanned.
         self.barcode.clear()
@@ -159,7 +201,6 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
 
         :return: a list of strings: ['<id>  lastname, firstname', ... ]
         """
-        logger.debug(' >> Started')
 
         format_data = list()
 
@@ -172,3 +213,21 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
                 format_data.append('<' + tup[0] + '>  ' + tup[2] + ', ' + tup[1])
 
         return format_data
+
+    def __display(self, title: str, text: str, informative_text: str = '', detailed_text: str = '',
+                  buttons: qtw.QMessageBox.StandardButton = qtw.QMessageBox.Ok) -> int:
+        message_box = qtw.QMessageBox(self)
+        message_box.setIcon(qtw.QMessageBox.Information)
+
+        message_box.setWindowTitle(title)
+        message_box.setText(text)
+
+        if informative_text:
+            message_box.setInformativeText(informative_text)
+        if detailed_text:
+            message_box.setDetailedText(detailed_text)
+
+        message_box.setStandardButtons(buttons)
+
+        return_value = message_box.exec_()
+        return return_value

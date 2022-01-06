@@ -3,13 +3,8 @@ from sqlite3 import Error
 import os
 from datetime import datetime
 import bcrypt
-import logging
 
 from GoogleSheetManager import GoogleSheetManager
-
-CONFIG_FILENAME = 'config.json'
-
-logger = logging.getLogger('TimeTrack.DbManager')
 
 
 class DatabaseManager:
@@ -23,50 +18,7 @@ class DatabaseManager:
                               'insert_student', 'update_student',
                               'insert_admin', 'update_admin', 'delete_admin')
 
-    def login_user(self, barcode: str):
-        user_data = tuple()
-
-        db_conn, cursor = self.__create_connection()
-        if not db_conn or not cursor:
-            return False, 'Database connection error or cursor error', False
-
-        # Check if the student table contains a student with this barcode.
-        sql = 'SELECT rowid, id, firstname, lastname FROM student WHERE id=?'
-        parameters = (barcode, )
-        success, message = self.__sql_execute(cursor, sql, parameters)
-        if success:
-            success, message, data = self.__sql_fetchone(cursor)
-            if len(data) > 0:
-                user_data = ('student', ) + data
-
-                # Get the status of the student ('Checked In' or 'Checked Out').
-                sql = '''SELECT rowid, id, checkin, checkout FROM activity 
-                        WHERE id=? AND checkout IS NULL'''
-                parameters = (barcode,)
-                success, message = self.__sql_execute(cursor, sql, parameters)
-                if success:
-                    success, message, data = self.__sql_fetchone(cursor)
-                    if len(data) > 0:
-                        user_data += ('Checked In', data[0], data[2])
-                    else:
-                        user_data += ('Checked Out', 0)
-            else:
-                # Check if the admin table contains an admin with this barcode.
-                sql = 'SELECT rowid, id, firstname, lastname FROM admin WHERE id=?'
-                parameters = (barcode,)
-                success, message = self.__sql_execute(cursor, sql, parameters)
-                if success:
-                    success, message, data = self.__sql_fetchone(cursor)
-                    if len(data) > 0:
-                        user_data = ('admin', ) + data
-                    else:
-                        user_data = ('invalid', )
-
-        self.__delete_connection(cursor, db_conn)
-
-        return success, message, user_data
-
-    def checkin_student(self, barcode: str, checkin: str = 'NOW'):
+    def checkin_student(self, barcode: str, checkin: str = 'NOW') -> tuple:
         """
         This method will *check in* a student.
         The insert_activity trigger prevents a student from being checked in twice.
@@ -75,7 +27,6 @@ class DatabaseManager:
         :param checkin: the check in time (default is current time)
         :return: (1) was this successful? (2) explanation of failure
         """
-        logger.debug(f'({barcode}, {checkin}) >> Started')
 
         # NOTE: the insert_activity trigger prevents a student from being checked in twice.
         if checkin == 'NOW':
@@ -89,9 +40,8 @@ class DatabaseManager:
 
         return success, message
 
-    def checkout_student(self, barcode: str, checkout: str = 'NOW'):
+    def checkout_student(self, barcode: str, checkout: str = 'NOW') -> tuple:
         """This method will check out a student. The student must be checked in already."""
-        logger.debug(f'({barcode}) >> Started')
         success = False
         message = ''
 
@@ -120,88 +70,7 @@ class DatabaseManager:
 
         return success, message
 
-    def get_table(self, table: str, filter: str = ''):
-        """
-        This method returns the data from a table as a list of tuples, including the rowid.
-
-        :param table: the name of the table to retrieve
-        :param filter: used for the activity table only to filter by barcode (id)
-        :return: (1) was this successful? (2) explanation of failure (3) the data
-        """
-        logger.debug(f'() >> Started')
-        success = False
-        message = ''
-        data = list()
-        table = table.lower()
-
-        if not self.__is_table_in_database(table):
-            return False, 'Invalid table', data
-
-        db_conn, cursor = self.__create_connection()
-        if not db_conn or not cursor:
-            return False, 'Database connection error or cursor error', data
-
-        sql = ''
-        parameters = None
-        if table == 'student':
-            sql = '''SELECT rowid, id, firstname, lastname FROM student ORDER BY id'''
-        elif table == 'activity':
-            if filter != '':
-                sql = '''SELECT rowid, id, checkin, checkout FROM activity WHERE id=? ORDER BY checkin DESC'''
-                parameters = (filter, )
-            else:
-                sql = '''SELECT rowid, id, checkin, checkout FROM activity ORDER BY checkin DESC'''
-        elif table == 'admin':
-            sql = '''SELECT rowid, id, firstname, lastname FROM admin ORDER BY id'''
-
-        success, message = self.__sql_execute(cursor, sql, parameters)
-        if success:
-            success, message, data = self.__sql_fetchall(cursor)
-
-        self.__delete_connection(cursor, db_conn)
-
-        return success, message, data
-
-    def get_record(self, table: str, row_id: int):
-        """
-        This method returns a list of records, including the rowid.
-        The data is returned as a list of tuples.
-
-        :param table: the name of the table in the database
-        :param row_id: the row_id to fetch from the table
-        :return: (1) was this successful? (2) explanation of failure (3) the data
-        """
-        logger.debug(f'() >> Started')
-        success = False
-        message = ''
-        data = list()
-        table = table.lower()
-
-        if not self.__is_table_in_database(table):
-            return False, 'Invalid table', data
-
-        db_conn, cursor = self.__create_connection()
-        if not db_conn or not cursor:
-            return False, 'Database connection error or cursor error', data
-
-        sql = ''
-        parameters = (row_id, )
-        if table == 'student':
-            sql = '''SELECT rowid, id, firstname, lastname FROM student WHERE rowid=?'''
-        elif table == 'activity':
-            sql = '''SELECT rowid, id, checkin, checkout FROM activity WHERE rowid=?'''
-        elif table == 'admin':
-            sql = '''SELECT rowid, id, firstname, lastname FROM admin WHERE rowid=?'''
-
-        success, message = self.__sql_execute(cursor, sql, parameters)
-        if success:
-            success, message, data = self.__sql_fetchall(cursor)
-
-        self.__delete_connection(cursor, db_conn)
-
-        return success, message, data
-
-    def new_record(self, table: str, record: tuple):
+    def new_record(self, table: str, record: tuple) -> tuple:
         """
         This method adds a new record into a table.
 
@@ -209,12 +78,11 @@ class DatabaseManager:
         :param record: a tuple containing the new record, but without a rowid
         :return: (1) was this successful? (2) explanation of failure
         """
-        logger.debug(f'() >> Started')
         success = False
         message = ''
         table = table.lower()
 
-        if not self.__is_table_in_database(table):
+        if not (table in self.__db_tables):
             return False, 'Invalid table'
 
         db_conn, cursor = self.__create_connection()
@@ -238,143 +106,20 @@ class DatabaseManager:
 
         return success, message
 
-    def edit_record(self, table: str, row_id: int, record: tuple):
-        """
-        This method edits a record in a table.
-
-        :param table: the name of the table in the database
-        :param row_id: the row_id to edit in the table
-        :param record: a tuple containing the edited record, but without a rowid
-        :return: (1) was this successful? (2) explanation of failure
-        """
-        logger.debug(f'() >> Started')
-        success = False
-        message = ''
-        table = table.lower()
-
-        if not self.__is_table_in_database(table):
-            return False, 'Invalid table'
-
-        db_conn, cursor = self.__create_connection()
-        if not db_conn or not cursor:
-            return False, 'Database connection error or cursor error'
-
-        sql = ''
-        if table == 'student':
-            sql = 'UPDATE student SET id=?, firstname=?, lastname=? WHERE rowid=?'
-        elif table == 'activity':
-            sql = 'UPDATE activity SET id=?, checkin=?, checkout=? WHERE rowid=?'
-        elif table == 'admin':
-            sql = 'UPDATE admin SET id=?, firstname=?, lastname=? WHERE rowid=?'
-
-        parameters = record + (row_id, )
-
-        success, message = self.__sql_execute(cursor, sql, parameters)
-        self.__delete_connection(cursor, db_conn)
-
-        return success, message
-
-    def edit_field(self, table: str, row_id: int, field: str, data: tuple):
-        """
-        This method edits a field in a table.
-
-        :param table: the name of the table in the database
-        :param row_id: the row_id to edit in the table
-        :param: field: the name of the field to edit
-        :param data: a tuple containing the edited field, but without a rowid
-        :return: (1) was this successful? (2) explanation of failure
-        """
-        logger.debug(f'() >> Started')
-        success = False
-        message = ''
-        table = table.lower()
-
-        if not self.__is_table_in_database(table):
-            return False, 'Invalid table'
-
-        db_conn, cursor = self.__create_connection()
-        if not db_conn or not cursor:
-            return False, 'Database connection error or cursor error'
-
-        sql = ''
-        if table == 'student':
-            if field == 'id':
-                sql = 'UPDATE student SET id=? WHERE rowid=?'
-            if field == 'firstname':
-                sql = 'UPDATE student SET firstname=? WHERE rowid=?'
-            if field == 'lastname':
-                sql = 'UPDATE student SET lastname=? WHERE rowid=?'
-        elif table == 'activity':
-            if field == 'id':
-                sql = 'UPDATE activity SET id=? WHERE rowid=?'
-            if field == 'checkin':
-                sql = 'UPDATE activity SET checkin=? WHERE rowid=?'
-            if field == 'checkout':
-                sql = 'UPDATE activity SET checkout=? WHERE rowid=?'
-        elif table == 'admin':
-            if field == 'id':
-                sql = 'UPDATE admin SET id=? WHERE rowid=?'
-            if field == 'firstname':
-                sql = 'UPDATE admin SET firstname=? WHERE rowid=?'
-            if field == 'lastname':
-                sql = 'UPDATE admin SET lastname=? WHERE rowid=?'
-
-        parameters = data + (row_id, )
-
-        success, message = self.__sql_execute(cursor, sql, parameters)
-        self.__delete_connection(cursor, db_conn)
-
-        return success, message
-
-    def delete_record(self, table: str, row_id: int):
-        """
-        This method deletes a record from a table.
-
-        :param table: the name of the table in the database
-        :param row_id: the row_id to edit in the table
-        :return: (1) was this successful? (2) explanation of failure
-        """
-        logger.debug(f'() >> started')
-        success = False
-        message = ''
-        table = table.lower()
-
-        if not self.__is_table_in_database(table):
-            return False, 'Invalid table'
-
-        db_conn, cursor = self.__create_connection()
-        if not db_conn or not cursor:
-            return False, 'Database connection error or cursor error'
-
-        sql = ''
-        parameters = (row_id, )
-        if table == 'student':
-            sql = 'DELETE FROM student WHERE rowid=?'
-        elif table == 'activity':
-            sql = 'DELETE FROM activity WHERE rowid=?'
-        elif table == 'admin':
-            sql = 'DELETE FROM admin WHERE rowid=?'
-
-        success, message = self.__sql_execute(cursor, sql, parameters)
-        self.__delete_connection(cursor, db_conn)
-
-        return success, message
-
-    def check_barcode(self, barcode: str):
+    def check_barcode(self, barcode: str) -> tuple:
         """
         This method checks if a barcode is valid.
 
         :param barcode: the barcode scanned
         :return: (1) was this successful? (2) explanation of failure (3) 'Invalid', 'Student', or 'Admin'
         """
-        logger.debug(f'({barcode}) >> Started')
         success = False
         message = ''
         barcode_type = 'Invalid'
 
         db_conn, cursor = self.__create_connection()
         if not db_conn or not cursor:
-            return False, 'Database connection error or cursor error', False
+            return False, 'Database connection error or cursor error', 'Error'
 
         # Check if the student table contains a student with this barcode.
         sql = 'SELECT id, firstname, lastname FROM student WHERE id=?'
@@ -399,7 +144,7 @@ class DatabaseManager:
 
         return success, message, barcode_type
 
-    def check_pin(self, barcode: str, pin: str):
+    def check_pin(self, barcode: str, pin: str) -> tuple:
         """
         This method checks if an admin pin is correct.
 
@@ -407,7 +152,6 @@ class DatabaseManager:
         :param pin: the admin pin (not encrypted)
         :return: (1) was this successful? (2) explanation of failure (3) was pin valid?
         """
-        logger.debug(f'({barcode}) >> Started')
         success = False
         message = ''
         valid = False
@@ -430,44 +174,6 @@ class DatabaseManager:
 
         return success, message, valid
 
-    def reset_pin(self, row_id: int, new_pin: str, old_pin: str):
-        """
-        This method resets an admin pin.
-
-        :param row_id: the row_id of the admin
-        :param new_pin: the new admin pin (not encrypted)
-        :param old_pin: the old admin pin (not encrypted)
-        :return: (1) was this successful? (2) explanation of failure
-        """
-        logger.debug(f'() >> Started')
-        success = False
-        message = ''
-        valid = False
-
-        db_conn, cursor = self.__create_connection()
-        if not db_conn or not cursor:
-            return False, 'Database connection error or cursor error'
-
-        # Check if the admin table contains an admin with this barcode.
-        sql = 'SELECT pin FROM admin WHERE rowid=?'
-        parameters = (row_id, )
-
-        success, message = self.__sql_execute(cursor, sql, parameters)
-        if success:
-            success, message, data = self.__sql_fetchone(cursor)
-            if len(data) > 0:
-                if self.__is_pin_correct(old_pin, data[0]):
-                    sql = 'UPDATE admin SET pin=? WHERE rowid=?'
-                    parameters = (self.__encrypt_pin(new_pin), row_id)
-                    success, message = self.__sql_execute(cursor, sql, parameters)
-                else:
-                    success = False
-                    message = 'Incorrect PIN.'
-
-        self.__delete_connection(cursor, db_conn)
-
-        return success, message
-
     def get_student_data(self, barcode: str) -> tuple:
         """
         This method returns a student name, checked in/out status, and total hours worked.
@@ -475,7 +181,6 @@ class DatabaseManager:
         :param barcode: the barcode scanned
         :return: a 3-tuple: ( success, message, (firstname, lastname, status, total_hours) )
         """
-        logger.debug(f'({barcode}) >> Started')
         success = False
         message = ''
 
@@ -546,26 +251,8 @@ class DatabaseManager:
 
         return success, message, status
 
-    def get_total_hours(self, barcode: str):
-        """This method returns the total hours for a student."""
-        logger.debug(f'({barcode}) >> Started')
-        success = False
-        message = ''
-
-        total_hours = 0.0
-        db_conn, cursor = self.__create_connection()
-        if not db_conn or not cursor:
-            return False, 'Database connection error or cursor error', total_hours
-
-        success, message, total_hours = self.__total_hours(cursor, barcode)
-
-        self.__delete_connection(cursor, db_conn)
-
-        return success, message, total_hours
-
-    def get_student_hours_table(self, barcode: str):
+    def get_student_hours_table(self, barcode: str) -> tuple:
         """This method returns a list of the hours for a student, totaled for each day."""
-        logger.debug(f'({barcode}) >> Started')
         success = False
         message = ''
 
@@ -626,12 +313,11 @@ class DatabaseManager:
 
         return success, message, hours_table, total_hours
 
-    def get_checked_in_list(self):
+    def get_checked_in_list(self) -> tuple:
         """
         This method returns a list of students currently checked in.
         :return: list of 3-tuples [ (id, firstname, lastname), ... ]
         """
-        logger.debug('() >> Started')
         success = False
         message = ''
 
@@ -657,7 +343,6 @@ class DatabaseManager:
     def upload_student_data_to_google_sheet(self) -> tuple:
         """This method uploads the student data to a Google Sheet."""
 
-        logger.debug('() >> Started')
         success = False
         message = ''
 
@@ -727,7 +412,7 @@ class DatabaseManager:
             return success, message, None
         return success, message, student_hours_list
 
-    def __create_connection(self):
+    def __create_connection(self) -> tuple:
         """
         This *private* method establishes a connection to the database and creates a cursor.
 
@@ -735,23 +420,25 @@ class DatabaseManager:
         """
         db_conn = None
         cursor = None
-        try:
-            # Connect to the database, if the database exists.
-            # If the database does not exist, the database is created but with no tables, indexes, triggers, etc.
-            db_conn = sqlite3.connect(self.__filename, isolation_level=None)
+
+        # Check if the database exists, do not create one if it does not exist.
+        if os.path.isfile(self.__filename):
+
             try:
-                cursor = db_conn.cursor()
+                # Connect to the database, if the database exists.
+                # If the database does not exist, the database is created but with no tables, indexes, triggers, etc.
+                db_conn = sqlite3.connect(self.__filename, isolation_level=None)
+                try:
+                    cursor = db_conn.cursor()
+                except Error:
+                    cursor = None
+                    db_conn.close()  # close the database connection if the cursor creation failed
             except Error:
-                cursor = None
-                db_conn.close()  # close the database connection if the cursor creation failed
-                logger.exception(' >> Error creating database cursor')
-        except Error:
-            db_conn = None
-            logger.exception(' >> Error creating database connection')
+                db_conn = None
 
         return db_conn, cursor
 
-    def __delete_connection(self, cursor: sqlite3.Cursor, db_conn: sqlite3.Connection):
+    def __delete_connection(self, cursor: sqlite3.Cursor, db_conn: sqlite3.Connection) -> None:
         """
         This *private* method closes the database connection and cursor.
 
@@ -767,12 +454,10 @@ class DatabaseManager:
                 db_conn.close()
             except Error:
                 db_conn = None
-                logger.exception(' >> Error closing database connection')
         except Error:
             cursor = None
-            logger.exception(' >> Error closing database cursor')
 
-    def __sql_execute(self, cursor: sqlite3.Cursor, sql: str, parameters: tuple = None):
+    def __sql_execute(self, cursor: sqlite3.Cursor, sql: str, parameters: tuple = None) -> tuple:
         """
         This *private* method is the **ONLY** way to execute sql statements on the database.
         DO **NOT** use any other cursor.execute() methods.
@@ -792,13 +477,12 @@ class DatabaseManager:
                 cursor.execute(sql)
             success = True
         except Error as e:
-            logger.exception(f'{sql}, {parameters} >> Error with execute')
             success = False
             message = str(e)
 
         return success, message
 
-    def __sql_fetchall(self, cursor: sqlite3.Cursor):
+    def __sql_fetchall(self, cursor: sqlite3.Cursor) -> tuple:
         """
         This *private* method fetches all the records from the database after the previously executed sql statement.
         This method returns a 3-tuple:
@@ -821,14 +505,13 @@ class DatabaseManager:
                 data = list()
             success = True
         except Error as e:
-            logger.exception(f'() >> Error with fetchall.')
             data = list()
             success = False
             message = str(e)
 
         return success, message, data
 
-    def __sql_fetchone(self, cursor: sqlite3.Cursor):
+    def __sql_fetchone(self, cursor: sqlite3.Cursor) -> tuple:
         """
         This *private* method fetches one of the records from the database after the previously executed sql statement.
         This method returns a 3-tuple:
@@ -851,26 +534,13 @@ class DatabaseManager:
                 data = tuple()
             success = True
         except Error as e:
-            logger.exception(f'() >> Error with fetchone.')
             data = tuple()
             success = False
             message = str(e)
 
         return success, message, data
 
-    def __is_table_in_database(self, table: str):
-        """
-        This *private* method is used to check that the table is in the database.
-
-        :param table: the name of the table to check for
-        :return: True if the table is in the database
-        """
-        result = table.lower() in self.__db_tables
-        if not result:
-            logger.debug(f' >> Invalid table: {table}')
-        return result
-
-    def __total_hours(self, cursor: sqlite3.Cursor, barcode: str):
+    def __total_hours(self, cursor: sqlite3.Cursor, barcode: str) -> tuple:
         total_hours = 0.0
 
         # Sum the total hours logged from previous checkins and checkouts.
@@ -891,7 +561,7 @@ class DatabaseManager:
 
         return success, message, total_hours
 
-    def __is_pin_correct(self, raw_pin: str, encrypted_pin: str):
+    def __is_pin_correct(self, raw_pin: str, encrypted_pin: str) -> bool:
         """
         This *private* method checks if the pin is correct.
 
@@ -901,7 +571,7 @@ class DatabaseManager:
         """
         return bcrypt.checkpw(str(raw_pin).encode(), str(encrypted_pin).encode())
 
-    def __encrypt_pin(self, pin: str):
+    def __encrypt_pin(self, pin: str) -> str:
         """
         This *private* method encrypts the pin.
 
@@ -913,41 +583,73 @@ class DatabaseManager:
 
         return hashed.decode()
 
-    def __check_database(self):
+    def create_database(self) -> tuple:
         """
         This method creates the database and tables if they do not exist.
 
-        :return: None
+        :return: Boolean indicating success, String explaining success/fail
         """
-        logger.debug('() >> Started')
+
+        db_conn = None
+        cursor = None
+        total = len(self.__db_tables) + len(self.__db_indexes) + len(self.__db_triggers)
 
         # Check if the database files exists.
-        if not os.path.isfile(self.__filename):
-            logger.warning(f' >> File does not exist: {self.__filename} --> Creating the database file.')
+        if os.path.isfile(self.__filename):
+            return False, 'Database file already exists', 0, total
 
-        db_conn, cursor = self.__create_connection()
+        # The self.__create_connection() cannot be used here because that method does not allow
+        # a blank database to be created.
+        # db_conn, cursor = self.__create_connection()
+
+        try:
+            # Connect to the database, if the database exists.
+            # If the database does not exist, the database is created but with no tables, indexes, triggers, etc.
+            db_conn = sqlite3.connect(self.__filename, isolation_level=None)
+            try:
+                cursor = db_conn.cursor()
+            except Error:
+                cursor = None
+                db_conn.close()  # close the database connection if the cursor creation failed
+        except Error:
+            db_conn = None
+
         if not db_conn or not cursor:
-            return False, 'Database connection error or cursor error'
+            return False, 'Database connection error or cursor error', 0, total
 
-        # Check if the tables and indexes are created.
+        counter = 0
+        # Create the tables, indexes, and triggers
         for table in self.__db_tables:
-            self.__check_db_object(cursor, 'table', table)
+            success, message = self.__create_db_object(cursor, 'table', table)
+            if success:
+                counter += 1
 
         for index in self.__db_indexes:
-            self.__check_db_object(cursor, 'index', index)
+            success, message = self.__create_db_object(cursor, 'index', index)
+            if success:
+                counter += 1
 
         for trigger in self.__db_triggers:
-            self.__check_db_object(cursor, 'trigger', trigger)
+            success, message = self.__create_db_object(cursor, 'trigger', trigger)
+            if success:
+                counter += 1
 
-        success, message, data = self.get_table('admin')
-        if success and len(data) == 0:
-            self.new_record('admin', ('4237', 'Sir', 'Lance-A-Bot', '4237'))
+        # Add a default admin account.
+        # success, message, data = self.get_table('admin')
+        # if success and len(data) == 0:
+        #     self.new_record('admin', ('4237', 'Sir', 'Lance-A-Bot', '4237'))
+        self.new_record('admin', ('4237', 'Sir', 'Lance-A-Bot', '4237'))
 
         self.__delete_connection(cursor, db_conn)
 
-    def __check_db_object(self, cursor: sqlite3.Cursor, type: str, name: str):
+        total = len(self.__db_tables) + len(self.__db_indexes) + len(self.__db_triggers)
+        if total == counter:
+            return True, 'All database objects created', counter, total
+        else:
+            return False, 'Not all database objects created', counter, total
+
+    def __create_db_object(self, cursor: sqlite3.Cursor, type: str, name: str) -> tuple:
         """This method checks if the table/index/trigger exists and creates the object if it does not exist."""
-        logger.debug(f'({type}, {name}) >> Started')
 
         # Check if the object is in the database files. Create the table if it does not exist.
         sql = f'SELECT name FROM sqlite_master WHERE type="{type}" AND name="{name}"'
@@ -955,9 +657,7 @@ class DatabaseManager:
 
         success, message, data = self.__sql_fetchall(cursor)
         if data:
-            return
-
-        logger.warning(f' >> {type} does not exist: {name} --> Creating the {type}.')
+            return False, 'The ' + name + ' ' + type + ' already exists.'
 
         sql = ''
         if type == 'table':
@@ -988,8 +688,13 @@ class DatabaseManager:
             elif name == 'delete_admin':
                 sql = self.__create_delete_admin_trigger()
 
+        else:
+            return False, 'Database object was NOT created.'
+
         if sql:
-            self.__sql_execute(cursor, sql)
+            success, message = self.__sql_execute(cursor, sql)
+            return success, message
+
 
     def __create_student_table(self):
         # Why is the Primary Key also specified as NOT NULL?

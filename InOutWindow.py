@@ -1,12 +1,9 @@
-import logging
 from PyQt5 import QtWidgets as qtw
 from PyQt5 import QtCore as qtc
 from PyQt5 import QtGui as qtg
 
 from gui.Ui_InOutWindow import Ui_InOutWindow
 from DatabaseManager import DatabaseManager
-
-logger = logging.getLogger('TimeTrack.InOutWindow')
 
 
 class HoursTableModel(qtc.QAbstractTableModel):
@@ -130,13 +127,12 @@ class HoursTableModel(qtc.QAbstractTableModel):
 
 class InOutWindow(qtw.QWidget, Ui_InOutWindow):
     """The Check In/Out window contains a Check In button, a Check Out button, a Cancel button,
-        and the Hours Logged table."""
+        and the 'Checked In' List."""
 
-    # Signal to indicate that the Check In/Out window was closed.
+    # Signal to indicate that the Admin window was closed.
     window_closed = qtc.pyqtSignal(str)
 
     def __init__(self, parent: qtw.QWidget, db_filename: str, barcode: str):
-        logger.info(' >> Started')
         super().__init__(parent)
         self.setupUi(self)
 
@@ -202,7 +198,6 @@ class InOutWindow(qtw.QWidget, Ui_InOutWindow):
         :param button_name: the name of the button clicked
         :return: None, emits the "window_closed" signal and passes a message to display on the Main window
         """
-        logger.debug(f'({button_name}) >> Started')
 
         # Determine which button was clicked and set the message to be displayed.
         if button_name == 'Cancel':

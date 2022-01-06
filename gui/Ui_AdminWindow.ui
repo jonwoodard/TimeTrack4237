@@ -202,7 +202,7 @@
           <enum>Qt::ClickFocus</enum>
          </property>
          <property name="text">
-          <string>  Check Out ALL</string>
+          <string>Check Out ALL</string>
          </property>
         </widget>
        </item>
@@ -222,12 +222,12 @@
       </layout>
      </item>
      <item>
-      <layout class="QHBoxLayout" name="cancelHorizontalLayout" stretch="3,2,3">
+      <layout class="QHBoxLayout" name="exitHorizontalLayout" stretch="3,2,3">
        <property name="spacing">
         <number>0</number>
        </property>
        <item>
-        <spacer name="leftCancelHorizontalSpacer">
+        <spacer name="leftExitHorizontalSpacer">
          <property name="orientation">
           <enum>Qt::Horizontal</enum>
          </property>
@@ -240,7 +240,7 @@
         </spacer>
        </item>
        <item>
-        <widget class="QPushButton" name="cancelButton">
+        <widget class="QPushButton" name="exitButton">
          <property name="sizePolicy">
           <sizepolicy hsizetype="MinimumExpanding" vsizetype="Preferred">
            <horstretch>0</horstretch>
@@ -264,12 +264,12 @@
           <enum>Qt::ClickFocus</enum>
          </property>
          <property name="text">
-          <string>Cancel</string>
+          <string>Exit</string>
          </property>
         </widget>
        </item>
        <item>
-        <spacer name="rightCancelHorizontalSpacer">
+        <spacer name="rightExitHorizontalSpacer">
          <property name="orientation">
           <enum>Qt::Horizontal</enum>
          </property>
@@ -343,7 +343,7 @@
       </layout>
      </item>
      <item>
-      <widget class="QListView" name="checkedInTable">
+      <widget class="QListView" name="checkedInList">
        <property name="maximumSize">
         <size>
          <width>380</width>

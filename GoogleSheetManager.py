@@ -1,13 +1,11 @@
 import os
+from PyQt5 import QtWidgets as qtw
 from datetime import datetime, timedelta
-import logging
 import gspread
 import gspread.utils
 import json
 
 CONFIG_FILENAME = 'config.json'
-
-logger = logging.getLogger('TimeTrack.GSManager')
 
 
 class GoogleSheetManager:
@@ -36,7 +34,8 @@ class GoogleSheetManager:
         self.__header_list = []
         self.__data_list = []
 
-        if self.__student_names_and_barcode_list and self.__student_hours_list:
+        # If there are no names and barcodes, then there is nothing to upload.
+        if self.__student_names_and_barcode_list:
 
             self.__create_header_list()
             if len(self.__header_list) == 3:
@@ -72,37 +71,40 @@ class GoogleSheetManager:
         :return: None
         """
 
-        # This is a sweet way to find the earliest week and latest week with data in the student_hours_list.
-        first = min(self.__student_hours_list, key=lambda x: int(x[3]) + int(x[4]) / 54)
-        last = max(self.__student_hours_list, key=lambda x: int(x[3]) + int(x[4]) / 54)
-
-        # Get the starting week/year and ending week/year
-        start_year = int(first[3])
-        start_week = int(first[4])
-        end_year = int(last[3])
-        end_week = int(last[4])
-
-        # Get the day number of the first sunday of the year
-        start_sunday = (7 - int(datetime(start_year, 1, 1).strftime('%w'))) % 7
-        end_sunday = (7 - int(datetime(end_year, 1, 1).strftime('%w'))) % 7
-
-        # Get the date of the first sunday of the year
-        start_date = datetime(start_year, 1, 1 + start_sunday)
-        end_date = datetime(end_year, 1, 1 + end_sunday)
-
-        # Get the sunday of the starting week/year and ending week/year
-        start_date += timedelta(days=(start_week - 1) * 7)
-        end_date += timedelta(days=(end_week - 1) * 7)
-
         self.__header_list = [['', '', '', ''], ['', '', '', ''], ['Last Name', 'First Name', 'Barcode', 'Hours']]
 
-        # Create the rest of the header_list, adding an element to each sub-list for the corresponding
-        # year, week, and sunday date in range from start_date to end_date
-        while start_date.date() <= end_date.date():
-            self.__header_list[0] += [start_date.strftime('%Y')]
-            self.__header_list[1] += [start_date.strftime('%U')]
-            self.__header_list[2] += [start_date.strftime('%m/%d/%Y')]
-            start_date += timedelta(days=7)
+        if self.__student_hours_list:
+            # This is a sweet way to find the earliest week and latest week with data in the student_hours_list.
+            first = min(self.__student_hours_list, key=lambda x: int(x[3]) + int(x[4]) / 54)
+            last = max(self.__student_hours_list, key=lambda x: int(x[3]) + int(x[4]) / 54)
+
+            # Get the starting week/year and ending week/year
+            start_year = int(first[3])
+            start_week = int(first[4])
+            end_year = int(last[3])
+            end_week = int(last[4])
+
+            # Get the day number of the first sunday of the year
+            start_sunday = (7 - int(datetime(start_year, 1, 1).strftime('%w'))) % 7
+            end_sunday = (7 - int(datetime(end_year, 1, 1).strftime('%w'))) % 7
+
+            # Get the date of the first sunday of the year
+            start_date = datetime(start_year, 1, 1 + start_sunday)
+            end_date = datetime(end_year, 1, 1 + end_sunday)
+
+            # Get the sunday of the starting week/year and ending week/year
+            start_date += timedelta(days=(start_week - 1) * 7)
+            end_date += timedelta(days=(end_week - 1) * 7)
+
+            self.__header_list = [['', '', '', ''], ['', '', '', ''], ['Last Name', 'First Name', 'Barcode', 'Hours']]
+
+            # Create the rest of the header_list, adding an element to each sub-list for the corresponding
+            # year, week, and sunday date in range from start_date to end_date
+            while start_date.date() <= end_date.date():
+                self.__header_list[0] += [start_date.strftime('%Y')]
+                self.__header_list[1] += [start_date.strftime('%U')]
+                self.__header_list[2] += [start_date.strftime('%m/%d/%Y')]
+                start_date += timedelta(days=7)
 
     def __create_data_list(self) -> None:
         """
@@ -168,6 +170,10 @@ class GoogleSheetManager:
         """
         # Check if the google config file exists.
         if not os.path.isfile(CONFIG_FILENAME):
+            title = 'Config File Error'
+            text = 'The "config.json" does not exist.'
+            informative_text = 'Create the file with the database and google configurations. See README.md'
+            self.__display(title, text, informative_text)
             return False, 'Google config file does not exist.', {}
 
         # Open the files if it exists.
@@ -195,7 +201,13 @@ class GoogleSheetManager:
             ws = wb.worksheet(google_config['worksheet name'])
             return wb, ws
         except Exception as e:
-            print('Opening= ', e)
+            title = 'Google Sheets Error'
+            text = 'There was an error with the Google Sheets file.'
+            informative_text = '''Check that the sheet exists in the Google Sheets file.\n 
+                                    Check that the config.json is correct.\n
+                                    Check that the credentials are correct.\n'''
+            detailed_text = str(e)
+            self.__display(title, text, informative_text, detailed_text)
             return None, None
 
     def __remove_data_and_formatting(self, wb: gspread.Spreadsheet, ws: gspread.Worksheet) -> None:
@@ -384,14 +396,23 @@ class GoogleSheetManager:
                     'fields': 'pixelSize'}}
                 body.get('requests', []).append(d9)
 
-            if num_rows > 1 and num_cols > 4:
+            if num_rows > 1:
                 # Row 1 and Columns A:D - Set to frozen
                 d10 = {'updateSheetProperties': {
                     'properties': {
                         'sheetId': sheet_id,
-                        'gridProperties': {'frozenRowCount': 1, 'frozenColumnCount': 4}},
-                    'fields': 'gridProperties(frozenRowCount,frozenColumnCount)'}}
+                        'gridProperties': {'frozenRowCount': 1}},
+                    'fields': 'gridProperties(frozenRowCount)'}}
                 body.get('requests', []).append(d10)
+
+            if num_cols > 4:
+                # Row 1 and Columns A:D - Set to frozen
+                d11 = {'updateSheetProperties': {
+                    'properties': {
+                        'sheetId': sheet_id,
+                        'gridProperties': {'frozenColumnCount': 4}},
+                    'fields': 'gridProperties(frozenColumnCount)'}}
+                body.get('requests', []).append(d11)
 
             try:
                 if len(body.get('requests', [])) > 0:
@@ -410,3 +431,21 @@ class GoogleSheetManager:
             response = ws.update('A1', [self.__header_list[2]] + self.__data_list, raw=False)
         except Exception as e:
             print('Update= ', e)
+
+    def __display(self, title: str, text: str, informative_text: str = '', detailed_text: str = '',
+                  buttons: qtw.QMessageBox.StandardButton = qtw.QMessageBox.Ok) -> int:
+        message_box = qtw.QMessageBox()
+        message_box.setIcon(qtw.QMessageBox.Information)
+
+        message_box.setWindowTitle(title)
+        message_box.setText(text)
+
+        if informative_text:
+            message_box.setInformativeText(informative_text)
+        if detailed_text:
+            message_box.setDetailedText(detailed_text)
+
+        message_box.setStandardButtons(buttons)
+
+        return_value = message_box.exec_()
+        return return_value
