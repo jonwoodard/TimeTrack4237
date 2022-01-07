@@ -129,6 +129,4 @@ dmypy.json
 .pyre/
 
 # Project files and folders
-OldFiles/
-credentials/*
-files/*
+/files/*
