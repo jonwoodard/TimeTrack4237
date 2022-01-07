@@ -72,7 +72,7 @@ class HoursTableModel(qtc.QAbstractTableModel):
         elif role == qtc.Qt.FontRole:
             font = qtg.QFont()
             font.setFamily("MS Shell Dlg 2")
-            font.setPointSize(18)
+            font.setPointSize(14)
             return font
 
         return None
@@ -113,7 +113,7 @@ class HoursTableModel(qtc.QAbstractTableModel):
             font = qtg.QFont()
             font.setFamily("MS Shell Dlg 2")
             font.setBold(True)
-            font.setPointSize(20)
+            font.setPointSize(18)
             font.setUnderline(True)
             return font
 
@@ -158,8 +158,7 @@ class InOutWindow(qtw.QWidget, Ui_InOutWindow):
 
         # Create the Model for the hoursTable
         hours_table_header = ('Day', 'Date', 'Hours')
-        hours_table_column_width = (80, 170, 110)
-        # hours_table_columns = {'header': ('Day', 'Date', 'Hours'), 'column_width': (80, 170, 110)}
+        hours_table_column_width = (60, 130, 90)  # Needs to be less than 300 total
         self.table_model = HoursTableModel(hours_table_model, hours_table_header)
         self.hoursTable.setModel(self.table_model)
         self.hoursTable.setEditTriggers(qtw.QAbstractItemView.NoEditTriggers)

@@ -142,13 +142,13 @@
          </property>
          <property name="minimumSize">
           <size>
-           <width>300</width>
+           <width>250</width>
            <height>200</height>
           </size>
          </property>
          <property name="font">
           <font>
-           <pointsize>26</pointsize>
+           <pointsize>24</pointsize>
            <weight>75</weight>
            <bold>true</bold>
           </font>
@@ -187,13 +187,13 @@
          </property>
          <property name="minimumSize">
           <size>
-           <width>300</width>
+           <width>250</width>
            <height>200</height>
           </size>
          </property>
          <property name="font">
           <font>
-           <pointsize>26</pointsize>
+           <pointsize>24</pointsize>
            <weight>75</weight>
            <bold>true</bold>
           </font>
@@ -344,9 +344,15 @@
      </item>
      <item>
       <widget class="QListView" name="checkedInList">
+       <property name="minimumSize">
+        <size>
+         <width>300</width>
+         <height>0</height>
+        </size>
+       </property>
        <property name="maximumSize">
         <size>
-         <width>380</width>
+         <width>375</width>
          <height>16777215</height>
         </size>
        </property>

@@ -118,6 +118,7 @@ class AdminWindow(qtw.QWidget, Ui_AdminWindow):
             # Concatenate each tuple of strings into a single formatted string
             # "format_data" is a list of strings: ['<id>  lastname, firstname', ... ]
             for tup in data:
-                format_data.append('<' + tup[0] + '>  ' + tup[2] + ', ' + tup[1])
+                # format_data.append('<' + tup[0] + '>  ' + tup[2] + ', ' + tup[1])
+                format_data.append(tup[2] + ', ' + tup[1])
 
         return format_data

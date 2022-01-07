@@ -75,31 +75,55 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
                 if success:
                     # Ask if the user wants to import data.
                     text = 'The database has been created successfully, but contains no student records.'
-                    result = self.__display('Import Data', text,
+                    result = self.__display('Import Student Records', text,
                                             'Would you like to import student records from a csv file?',
                                             '', qtw.QMessageBox.Yes | qtw.QMessageBox.No)
 
                     if result == qtw.QMessageBox.Yes:
-                        # Let the user select the file to import.
-                        csv_filename, _ = qtw.QFileDialog.getOpenFileName(self, 'Open a file', os.getcwd(), 'csv (*.csv)')
-                        _, file_extension = os.path.splitext(csv_filename)
-                        if file_extension == '.csv':
+                        self.__import_records('student')
 
-                            # The with ... as statement will open the file and close the file at the end.
-                            with open(csv_filename, 'r') as fh:
-                                csv_reader = csv.reader(fh)
-                                counter = 0
-                                for record in csv_reader:
-                                    self.__db_manager.new_record('student', tuple(record))
-                                    counter += 1
+                        result = self.__display('Import Activity Records', 'The database contains no activity records.',
+                                                'Would you like to import SAMPLE activity records from a csv file?',
+                                                '', qtw.QMessageBox.Yes | qtw.QMessageBox.No)
+                        if result == qtw.QMessageBox.Yes:
+                            self.__import_records('activity')
+                        # # Let the user select the file to import.
+                        # csv_filename, _ = qtw.QFileDialog.getOpenFileName(self, 'Open a file', os.getcwd(), 'csv (*.csv)')
+                        # _, file_extension = os.path.splitext(csv_filename)
+                        # if file_extension == '.csv':
+                        #
+                        #     # The with ... as statement will open the file and close the file at the end.
+                        #     with open(csv_filename, 'r') as fh:
+                        #         csv_reader = csv.reader(fh)
+                        #         counter = 0
+                        #         for record in csv_reader:
+                        #             self.__db_manager.new_record('student', tuple(record))
+                        #             counter += 1
+                        #
+                        #         self.__display('Import Success', 'Imported ' + str(counter) + ' student records.')
 
-                                self.__display('Import', 'Import complete: ' + str(counter) + ' records imported')
                 else:
                     text = 'Only created ' + str(counter) + ' out of ' + str(total) + ' database objects.'
                     self.__display('Database Error', text)
 
             else:
                 self.__display('Database Error', 'This application requires a database file.')
+
+    def __import_records(self, table: str) -> None:
+        # Let the user select the file to import.
+        csv_filename, _ = qtw.QFileDialog.getOpenFileName(self, 'Open a file', os.getcwd(), 'csv (*.csv)')
+        _, file_extension = os.path.splitext(csv_filename)
+        if file_extension == '.csv':
+
+            # The with ... as statement will open the file and close the file at the end.
+            with open(csv_filename, 'r') as fh:
+                csv_reader = csv.reader(fh)
+                counter = 0
+                for record in csv_reader:
+                    self.__db_manager.new_record(table, tuple(record))
+                    counter += 1
+
+                self.__display('Import Success', 'Imported ' + str(counter) + ' ' + table + ' records.')
 
     @qtc.pyqtSlot(str)
     def barcode_scanned(self, barcode: str) -> None:
@@ -141,7 +165,7 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
 
         elif barcode_type == 'Error':
             # Display an error message on the Main window because of a Database error.
-            self.refresh_window('Database Error. Contact the administrator.', 3)
+            self.refresh_window('Database Error. See Admin.', 3)
 
     @qtc.pyqtSlot(str, str)
     def admin_pin_dialog_box_closed(self, barcode: str, pin: str) -> None:
@@ -210,7 +234,8 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
             # Concatenate each tuple of strings into a single formatted string
             # "format_data" is a list of strings: ['<id>  lastname, firstname', ... ]
             for tup in data:
-                format_data.append('<' + tup[0] + '>  ' + tup[2] + ', ' + tup[1])
+                # format_data.append('<' + tup[0] + '>  ' + tup[2] + ', ' + tup[1])
+                format_data.append(tup[2] + ', ' + tup[1])
 
         return format_data
 

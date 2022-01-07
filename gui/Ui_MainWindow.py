@@ -85,6 +85,7 @@ class Ui_MainWindow(object):
         self.checkedInLabel.setObjectName("checkedInLabel")
         self.checkedInVerticalLayout.addWidget(self.checkedInLabel)
         self.checkedInList = QtWidgets.QListView(MainWindow)
+        self.checkedInList.setMinimumSize(QtCore.QSize(300, 0))
         self.checkedInList.setMaximumSize(QtCore.QSize(375, 16777215))
         font = QtGui.QFont()
         font.setFamily("MS Shell Dlg 2")
