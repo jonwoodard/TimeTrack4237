@@ -4,6 +4,7 @@ from PyQt5 import QtGui as qtg
 
 from gui.Ui_AdminWindow import Ui_AdminWindow
 from DatabaseManager import DatabaseManager
+from GoogleSheetManager import GoogleSheetManager
 
 
 class AdminWindow(qtw.QWidget, Ui_AdminWindow):
@@ -74,7 +75,15 @@ class AdminWindow(qtw.QWidget, Ui_AdminWindow):
             self.window_closed.emit('Successful Exit.')
             self.close()
         elif button_name == 'Upload Data':
-            self.__db_manager.upload_student_data_to_google_sheet()
+            # The GoogleSheetManager automatically uploads the data when the object is created
+            success, message, student_names_and_barcode_list, student_hours_list = self.__db_manager.get_google_sheet_data()
+            if success:
+                GoogleSheetManager(student_names_and_barcode_list, student_hours_list)
+            else:
+                text = 'There was a problem fetching the data from the database.'
+                informative_text = 'No data was uploaded to the Google Sheet.'
+                self.__display('Database Error', text, informative_text)
+
             self.disable_button(self.uploadDataButton, 'Data already uploaded')
         elif button_name == 'Check Out ALL':
             # "data" is a list of tuples: [('id', 'firstname', 'lastname'), ... ]
@@ -122,3 +131,22 @@ class AdminWindow(qtw.QWidget, Ui_AdminWindow):
                 format_data.append(tup[2] + ', ' + tup[1])
 
         return format_data
+
+    def __display(self, title: str, text: str, informative_text: str = '', detailed_text: str = '',
+                  buttons: qtw.QMessageBox.StandardButton = qtw.QMessageBox.Ok) -> int:
+        message_box = qtw.QMessageBox(self)
+        message_box.setIcon(qtw.QMessageBox.Information)
+
+        message_box.setWindowTitle(title)
+        message_box.setText(text)
+
+        if informative_text:
+            message_box.setInformativeText(informative_text)
+        if detailed_text:
+            message_box.setDetailedText(detailed_text)
+
+        message_box.setStandardButtons(buttons)
+
+        return_value = message_box.exec_()
+        return return_value
+

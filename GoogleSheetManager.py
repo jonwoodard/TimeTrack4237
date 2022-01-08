@@ -1,9 +1,10 @@
 import os
-from PyQt5 import QtWidgets as qtw
-from datetime import datetime, timedelta
 import gspread
 import gspread.utils
 import json
+
+from PyQt5 import QtWidgets as qtw
+from datetime import datetime, timedelta
 
 # The CONFIG_FILENAME is also defined in TimeTrack4237.py
 CONFIG_FILENAME = 'config.json'
@@ -56,6 +57,9 @@ class GoogleSheetManager:
                         self.__resize_sheet(ws, num_rows, num_cols)
                         self.__format_sheet(wb, ws)
                         self.__enter_data_on_sheet(ws)
+
+                        text = 'The data was uploaded successfully to the Google Sheet.'
+                        self.__display('Upload Success', text)
 
     def __create_header_list(self) -> None:
         """
@@ -172,10 +176,9 @@ class GoogleSheetManager:
 
         # Check if the google config file exists.
         if not os.path.isfile(config_file):
-            title = 'Config File Error'
             text = 'The "config.json" does not exist.'
             informative_text = 'Create the file with the database and google configurations. See README.md'
-            self.__display(title, text, informative_text)
+            self.__display('Config File Error', text, informative_text)
             return False, 'Google config file does not exist.', {}
 
         # Open the files if it exists.

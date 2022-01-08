@@ -3,7 +3,6 @@ import os
 
 from PyQt5 import QtWidgets as qtw
 from PyQt5 import QtCore as qtc
-
 from gui.Ui_MainWindow import Ui_MainWindow
 from InOutWindow import InOutWindow
 from AdminWindow import AdminWindow

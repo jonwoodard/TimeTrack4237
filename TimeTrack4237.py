@@ -3,8 +3,8 @@ import sys
 import json
 
 from PyQt5 import QtWidgets as qtw
-
 from MainWindow import MainWindow
+
 
 # The CONFIG_FILENAME is also defined in GoogleSheetManager.py
 CONFIG_FILENAME = 'config.json'

@@ -1,10 +1,9 @@
 import sqlite3
-from sqlite3 import Error
 import os
-from datetime import datetime
 import bcrypt
 
-from GoogleSheetManager import GoogleSheetManager
+from sqlite3 import Error
+from datetime import datetime
 
 
 class DatabaseManager:
@@ -340,7 +339,7 @@ class DatabaseManager:
 
         return success, message, data
 
-    def upload_student_data_to_google_sheet(self) -> tuple:
+    def get_google_sheet_data(self) -> tuple:
         """This method uploads the student data to a Google Sheet."""
 
         success = False
@@ -348,20 +347,22 @@ class DatabaseManager:
 
         db_conn, cursor = self.__create_connection()
         if not db_conn or not cursor:
-            return False, 'Database connection error or cursor error'
+            return False, 'Database connection error or cursor error', [], []
 
         success, message, student_names_and_barcode_list = self.__get_student_names_and_barcode_list(cursor)
         if not success:
-            return False, 'Error with student names and barcode list'
+            return False, 'Error with student names and barcode list', [], []
 
         success, message, student_hours_list = self.__get_student_hours_list(cursor)
         if not success:
-            return False, 'Error with student hours list'
+            return False, 'Error with student hours list', [], []
 
-        # The GoogleSheetManager automatically uploads the data when the object is created
-        google_sheet_manager = GoogleSheetManager(student_names_and_barcode_list, student_hours_list)
+        # # The GoogleSheetManager automatically uploads the data when the object is created
+        # google_sheet_manager = GoogleSheetManager(student_names_and_barcode_list, student_hours_list)
 
         self.__delete_connection(cursor, db_conn)
+
+        return True, 'Successfully retrieved data', student_names_and_barcode_list, student_hours_list
 
     def __get_student_names_and_barcode_list(self, cursor: sqlite3.Cursor) -> tuple:
         """
