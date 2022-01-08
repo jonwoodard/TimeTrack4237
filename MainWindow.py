@@ -87,20 +87,6 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
                                                 '', qtw.QMessageBox.Yes | qtw.QMessageBox.No)
                         if result == qtw.QMessageBox.Yes:
                             self.__import_records('activity')
-                        # # Let the user select the file to import.
-                        # csv_filename, _ = qtw.QFileDialog.getOpenFileName(self, 'Open a file', os.getcwd(), 'csv (*.csv)')
-                        # _, file_extension = os.path.splitext(csv_filename)
-                        # if file_extension == '.csv':
-                        #
-                        #     # The with ... as statement will open the file and close the file at the end.
-                        #     with open(csv_filename, 'r') as fh:
-                        #         csv_reader = csv.reader(fh)
-                        #         counter = 0
-                        #         for record in csv_reader:
-                        #             self.__db_manager.new_record('student', tuple(record))
-                        #             counter += 1
-                        #
-                        #         self.__display('Import Success', 'Imported ' + str(counter) + ' student records.')
 
                 else:
                     text = 'Only created ' + str(counter) + ' out of ' + str(total) + ' database objects.'
@@ -111,7 +97,8 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
 
     def __import_records(self, table: str) -> None:
         # Let the user select the file to import.
-        csv_filename, _ = qtw.QFileDialog.getOpenFileName(self, 'Open a file', os.getcwd(), 'csv (*.csv)')
+        this_directory = os.path.dirname(os.path.realpath(__file__))
+        csv_filename, _ = qtw.QFileDialog.getOpenFileName(self, 'Open a file', this_directory, 'csv (*.csv)')
         _, file_extension = os.path.splitext(csv_filename)
         if file_extension == '.csv':
 
