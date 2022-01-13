@@ -1,3 +1,4 @@
+import platform
 from PyQt5 import QtWidgets as qtw
 from PyQt5 import QtCore as qtc
 from PyQt5 import QtGui as qtg
@@ -183,10 +184,10 @@ class InOutWindow(qtw.QWidget, Ui_InOutWindow):
         self.checkinButton.clicked.connect(lambda: self.clicked('Check In'))
         self.checkoutButton.clicked.connect(lambda: self.clicked('Check Out'))
 
-        #if platform.system() == 'Windows':
-        #self.show()
-        #else:
-        self.showFullScreen()
+        if platform.system() == 'Windows':
+            self.show()
+        else:
+            self.showFullScreen()
 
     @qtc.pyqtSlot(str)
     def clicked(self, button_name: str) -> None:
@@ -226,3 +227,21 @@ class InOutWindow(qtw.QWidget, Ui_InOutWindow):
             font.setBold(False)
             font.setPointSize(24)
             button.setFont(font)
+
+    def __display(self, title: str, text: str, informative_text: str = '', detailed_text: str = '',
+                  buttons: qtw.QMessageBox.StandardButton = qtw.QMessageBox.Ok) -> int:
+        message_box = qtw.QMessageBox(self)
+        message_box.setIcon(qtw.QMessageBox.Information)
+
+        message_box.setWindowTitle(title)
+        message_box.setText(text)
+
+        if informative_text:
+            message_box.setInformativeText(informative_text)
+        if detailed_text:
+            message_box.setDetailedText(detailed_text)
+
+        message_box.setStandardButtons(buttons)
+
+        return_value = message_box.exec_()
+        return return_value

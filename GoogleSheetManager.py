@@ -61,6 +61,22 @@ class GoogleSheetManager:
                         text = 'The data was uploaded successfully to the Google Sheet.'
                         self.__display('Upload Success', text)
 
+    def __get_database_file(self, config_file: str) -> tuple:
+        # Open the config file and read it.
+        with open(config_file, 'r') as fh:
+            try:
+                # Read the json string from the file into the config dictionary.
+                config = json.load(fh)
+
+                # Store the database config dictionary
+                database_config = config['database config']
+
+                folder, file = os.path.split(database_config['filename'])
+                db_file = os.path.join(THIS_DIRECTORY, folder, file)
+                return True, '', db_file
+            except Exception as e:
+                return False, 'Google config file is unreadable.', ''
+
     def __create_header_list(self) -> None:
         """
         This *private* method creates the header_list which contains 3 sub-lists.
@@ -125,6 +141,7 @@ class GoogleSheetManager:
 
         data_list_index = 0
         header_list_index = 4
+
         for record in self.__student_hours_list:
             # record = ('lastname', 'firstname', 'barcode', 'year', 'week number', 'week hours')
 
@@ -136,16 +153,24 @@ class GoogleSheetManager:
 
             year = int(record[3])
             week_num = int(record[4])
+            week_hours = record[5]
+            self.__data_list[data_list_index][3] += week_hours
+
             # If the week number is 0, then the Sunday at the beginning of that week was in the previous year
             if week_num == 0:
                 year -= 1
                 week_num = int(datetime(year, 12, 31).strftime('%W'))  # either 52 or 53
-            week_hours = record[5]
+
+                # Check if the last week of the previous year data
+                same_year = (str(year) == str(self.__header_list[0][header_list_index-1]))
+                same_week = (str(week_num) == str(self.__header_list[1][header_list_index-1]))
+
+                if same_year and same_week:
+                    week_hours += self.__data_list[data_list_index].pop()
+                    header_list_index -= 1
 
             # Append the weekly hours onto the "data_list" for each student
             # data_list = [ ['lastname', 'firstname', 'barcode', total_hours, week1_hours, week2_hours, ...] ...]
-            self.__data_list[data_list_index][3] += week_hours
-
             # Find the correct column for this "record" in the "data_list"
             # If a student only worked week 1 and week 3, then a blank needs to be added for week 2.
             done = False

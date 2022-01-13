@@ -1,3 +1,5 @@
+import platform
+
 from PyQt5 import QtWidgets as qtw
 from PyQt5 import QtCore as qtc
 from PyQt5 import QtGui as qtg
@@ -59,7 +61,10 @@ class AdminWindow(qtw.QWidget, Ui_AdminWindow):
         self.uploadDataButton.clicked.connect(lambda: self.clicked('Upload Data'))
         self.checkOutAllButton.clicked.connect(lambda: self.clicked('Check Out ALL'))
 
-        self.showFullScreen()
+        if platform.system() == 'Windows':
+            self.show()
+        else:
+            self.showFullScreen()
 
     @qtc.pyqtSlot(str)
     def clicked(self, button_name: str) -> None:

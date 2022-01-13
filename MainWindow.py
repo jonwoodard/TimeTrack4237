@@ -1,3 +1,4 @@
+import platform
 import csv
 import os
 
@@ -17,7 +18,7 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
         super(MainWindow, self).__init__()
         self.setupUi(self)
         self.setWindowModality(qtc.Qt.ApplicationModal)  # block input to all other windows
-        self.setWindowFlag(qtc.Qt.Dialog)  # dialog box without min or max buttons
+        self.setWindowFlag(qtc.Qt.Window)  # dialog box without min or max buttons
         self.setWindowFlag(qtc.Qt.FramelessWindowHint)  # borderless window that cannot be resized
 
         self.__filename = filename
@@ -54,10 +55,10 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
         #   the second message will only display for the remaining time from the first message.
         self.__timer.timeout.connect(self.message.clear)
 
-        #if platform.system() == 'Windows':
-        #    self.show()
-        #else:
-        self.showFullScreen()
+        if platform.system() == 'Windows':
+            self.show()
+        else:
+            self.showFullScreen()
         self.check_database()  # check if the database file exists after the main window displays
 
     def check_database(self) -> None:
