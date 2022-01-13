@@ -48,6 +48,7 @@ def main() -> None:
 
     app = qtw.QApplication(sys.argv)
 
+    # Check if the program was started with the "-upload" option
     if len(sys.argv) > 1:
         if sys.argv[1] == '-upload':
             gsm = GoogleSheetManager()

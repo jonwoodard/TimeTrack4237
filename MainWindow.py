@@ -15,7 +15,7 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
     """The Main Window contains a title, a message, an input box, and the 'Checked In' list."""
 
     def __init__(self, filename: str):
-        super(MainWindow, self).__init__()
+        super().__init__()
         self.setupUi(self)
         self.setWindowModality(qtc.Qt.ApplicationModal)  # block input to all other windows
         self.setWindowFlag(qtc.Qt.Window)  # dialog box without min or max buttons
