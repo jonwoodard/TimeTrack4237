@@ -3,6 +3,8 @@ import sys
 import json
 
 from PyQt5 import QtWidgets as qtw
+
+from GoogleSheetManager import GoogleSheetManager
 from MainWindow import MainWindow
 
 
@@ -46,32 +48,39 @@ def main() -> None:
 
     app = qtw.QApplication(sys.argv)
 
-    success, message, config_file = get_config_file()
+    if len(sys.argv) > 1:
+        if sys.argv[1] == '-upload':
+            gsm = GoogleSheetManager()
+            gsm.upload_data()
+            sys.exit(0)
 
-    if success:
-        success, message, db_file = get_database_file(config_file)
+    else:
+        success, message, config_file = get_config_file()
 
         if success:
-            mw = MainWindow(db_file)
-            sys.exit(app.exec_())
+            success, message, db_file = get_database_file(config_file)
+
+            if success:
+                mw = MainWindow(db_file)
+                sys.exit(app.exec_())
+
+            else:
+                message_box = qtw.QMessageBox()
+                message_box.setIcon(qtw.QMessageBox.Critical)
+                message_box.setWindowTitle('Config File Error')
+                message_box.setText('The "config.json" file does not contain a "database filename".')
+                message_box.setStandardButtons(qtw.QMessageBox.Ok)
+                return_value = message_box.exec_()
+                sys.exit(0)
 
         else:
             message_box = qtw.QMessageBox()
             message_box.setIcon(qtw.QMessageBox.Critical)
             message_box.setWindowTitle('Config File Error')
-            message_box.setText('The "config.json" file does not contain a "database filename".')
+            message_box.setText('The "config.json" file does not exist.')
             message_box.setStandardButtons(qtw.QMessageBox.Ok)
             return_value = message_box.exec_()
             sys.exit(0)
-
-    else:
-        message_box = qtw.QMessageBox()
-        message_box.setIcon(qtw.QMessageBox.Critical)
-        message_box.setWindowTitle('Config File Error')
-        message_box.setText('The "config.json" file does not exist.')
-        message_box.setStandardButtons(qtw.QMessageBox.Ok)
-        return_value = message_box.exec_()
-        sys.exit(0)
 
 
 if __name__ == '__main__':

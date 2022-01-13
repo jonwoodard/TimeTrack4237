@@ -79,17 +79,18 @@ class AdminWindow(qtw.QWidget, Ui_AdminWindow):
         if button_name == 'Exit':
             self.window_closed.emit('Successful Exit.')
             self.close()
+
         elif button_name == 'Upload Data':
-            # The GoogleSheetManager automatically uploads the data when the object is created
-            success, message, student_names_and_barcode_list, student_hours_list = self.__db_manager.get_google_sheet_data()
+            gsm = GoogleSheetManager()
+            success, title, message = gsm.upload_data()
             if success:
-                GoogleSheetManager(student_names_and_barcode_list, student_hours_list)
+                text = 'The data was uploaded successfully to the Google Sheet.'
+                self.__display('Upload Success', text)
             else:
-                text = 'There was a problem fetching the data from the database.'
-                informative_text = 'No data was uploaded to the Google Sheet.'
-                self.__display('Database Error', text, informative_text)
+                self.__display(title, message)
 
             self.disable_button(self.uploadDataButton, 'Data already uploaded')
+
         elif button_name == 'Check Out ALL':
             # "data" is a list of tuples: [('id', 'firstname', 'lastname'), ... ]
             success, message, data = self.__db_manager.get_checked_in_list()

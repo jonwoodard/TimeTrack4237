@@ -3,8 +3,8 @@ import gspread
 import gspread.utils
 import json
 
-from PyQt5 import QtWidgets as qtw
 from datetime import datetime, timedelta
+from DatabaseManager import DatabaseManager
 
 # The CONFIG_FILENAME is also defined in TimeTrack4237.py
 CONFIG_FILENAME = 'config.json'
@@ -23,46 +23,89 @@ class GoogleSheetManager:
     # These are the same limits for reading, but that is not an issue with this application.
     # Use the update() and batch_update() methods to help reduce API calls.
 
-    def __init__(self, student_names_and_barcode_list, student_hours_list):
+    def __init__(self):
+        # self.__student_names_and_barcode_list = [ (lastname0, firstname0, barcode0), ... ]
+        self.__student_names_and_barcode_list = []
 
-        # student_names_and_barcode_list = [ (lastname0, firstname0, barcode0), ... ]
-        self.__student_names_and_barcode_list = student_names_and_barcode_list
-
-        # student_hours_list = [ (lastname0, firstname0, barcode0, year1, week1, week1_hours),
-        #                        (lastname0, firstname0, barcode0, year2, week2, week2_hours), ...]
+        # self.__student_hours_list = [ (lastname0, firstname0, barcode0, year1, week1, week1_hours),
+        #                               (lastname0, firstname0, barcode0, year2, week2, week2_hours), ...]
         # Note: there is one tuple for each week that a student has logged hours,
         #   so each student will have several tuples with each tuple indicating weekly hours.
-        self.__student_hours_list = student_hours_list
+        self.__student_hours_list = []
 
+        # self.__header_list[0] = ['', '', '', '', year1, year1, year1, ...,  year1,  year2, ... ]
+        # self.__header_list[1] = ['', '', '', '', week1, week2, week3, ..., week51, week52, ... ]
+        # self.__header_list[2] = ['Last name', 'First name', 'Barcode', 'Hours', sunday1, sunday2, sunday3, ... ]
         self.__header_list = []
+
+        # self.__data_list = [ ['lastname', 'firstname', 'barcode', total_hours, week1_hours, week2_hours, ...] ...]
         self.__data_list = []
 
+    def upload_data(self) -> tuple:
+        success = False
+        message = ''
+
+        success, message, db_filename = self.__get_database_file()
+        if not success:
+            return False, 'Database Error', message
+
+        db_manager = DatabaseManager(db_filename)
+        success, message, self.__student_names_and_barcode_list, self.__student_hours_list = db_manager.get_google_sheet_data()
         # If there are no names and barcodes, then there is nothing to upload.
-        if self.__student_names_and_barcode_list:
+        # The student_hours_list could be empty, before any student has logged hours, which is fine.
+        if not (success and self.__student_names_and_barcode_list):
+            return False, 'Database Error', message
 
-            self.__create_header_list()
-            if len(self.__header_list) == 3:
-                self.__create_data_list()
-                success, message, google_config = self.__get_google_config()
-                if success:
-                    wb, ws = self.__open_sheet(google_config)
-                    if wb and ws:
-                        self.__remove_data_and_formatting(wb, ws)
-                        num_rows = len(self.__data_list) + 1
-                        num_cols = len(self.__header_list[2])  # checked above that header_list has 3 elements
+        self.__create_header_list()
+        # The header list must have 3 lists at this point. [ [years...], [weeks...], [dates...] ]
+        if len(self.__header_list) != 3:
+            return False, 'Header List Error', 'The header list failed to create properly.'
 
-                        # The order below matters: (1) resize the sheet, (2) format the sheet, (3) enter the data
-                        # The barcode column must be set to TEXT number format before the data is entered,
-                        # otherwise any leading zeros will be lost.
-                        self.__resize_sheet(ws, num_rows, num_cols)
-                        self.__format_sheet(wb, ws)
-                        self.__enter_data_on_sheet(ws)
+        self.__create_data_list()
+        # The data_list should NOT be empty at this point.
+        if not self.__data_list:
+            return False, 'Data List Error', 'The data list failed to create properly.'
 
-                        text = 'The data was uploaded successfully to the Google Sheet.'
-                        self.__display('Upload Success', text)
+        success, message, google_config = self.__get_google_config()
+        if not success:
+            return False, 'Google Sheets Error', message
 
-    def __get_database_file(self, config_file: str) -> tuple:
-        # Open the config file and read it.
+        success, message, wb, ws = self.__open_sheet(google_config)
+        if not (success and wb and ws):
+            return False, 'Google Sheets Error', message
+
+        success, message = self.__remove_data_and_formatting(wb, ws)
+        if not success:
+            return False, 'Google Sheets Error', message
+
+        num_rows = len(self.__data_list) + 1
+        num_cols = len(self.__header_list[2])  # checked above that header_list has 3 elements
+
+        # The order below matters: (1) resize the sheet, (2) format the sheet, (3) enter the data
+        # The barcode column must be set to TEXT number format before the data is entered,
+        #   otherwise any leading zeros will be lost.
+        success, message = self.__resize_sheet(ws, num_rows, num_cols)
+        if not success:
+            return False, 'Google Sheets Error', message
+
+        success, message = self.__format_sheet(wb, ws)
+        if not success:
+            return False, 'Google Sheets Error', message
+
+        success, message = self.__enter_data_on_sheet(ws)
+        if not success:
+            return False, 'Google Sheets Error', message
+
+        return True, 'Upload Successful', 'The data was uploaded successfully to the Google Sheet.'
+
+    def __get_database_file(self) -> tuple:
+        config_file = os.path.join(THIS_DIRECTORY, CONFIG_FILENAME)
+
+        # Check if the google config file exists.
+        if not os.path.isfile(config_file):
+            return False, 'The "config.json" file does not exist.', ''
+
+        # Open the config file, read it, and close the file.
         with open(config_file, 'r') as fh:
             try:
                 # Read the json string from the file into the config dictionary.
@@ -73,9 +116,9 @@ class GoogleSheetManager:
 
                 folder, file = os.path.split(database_config['filename'])
                 db_file = os.path.join(THIS_DIRECTORY, folder, file)
-                return True, '', db_file
+                return True, 'Found database filename.', db_file
             except Exception as e:
-                return False, 'Google config file is unreadable.', ''
+                return False, 'The "config.json" file is unreadable.', ''
 
     def __create_header_list(self) -> None:
         """
@@ -201,9 +244,6 @@ class GoogleSheetManager:
 
         # Check if the google config file exists.
         if not os.path.isfile(config_file):
-            text = 'The "config.json" does not exist.'
-            informative_text = 'Create the file with the database and google configurations. See README.md'
-            self.__display('Config File Error', text, informative_text)
             return False, 'Google config file does not exist.', {}
 
         # Open the files if it exists.
@@ -214,7 +254,7 @@ class GoogleSheetManager:
                 # Store the google config dictionary
                 google_config = config['google config']
                 return True, '', google_config
-            except:
+            except Exception as e:
                 return False, 'Google config file is unreadable.', {}
 
     def __open_sheet(self, google_config: dict) -> tuple:
@@ -232,15 +272,11 @@ class GoogleSheetManager:
             gc = gspread.service_account(credential_file)
             wb = gc.open_by_url(google_config['spreadsheet url'])
             ws = wb.worksheet(google_config['worksheet name'])
-            return wb, ws
+            return True, '', wb, ws
         except Exception as e:
-            text = 'There was an error with the Google Sheets file.'
-            informative_text = '''Check that the sheet exists in the Google Sheets file.\n
-            Check that the config.json is correct.\nCheck that the credentials are correct.\n'''
-            self.__display('Google Sheets Error', text, informative_text, str(e))
-            return None, None
+            return False, 'There was an error with the Google Sheets file.', None, None
 
-    def __remove_data_and_formatting(self, wb: gspread.Spreadsheet, ws: gspread.Worksheet) -> None:
+    def __remove_data_and_formatting(self, wb: gspread.Spreadsheet, ws: gspread.Worksheet) -> tuple:
         """
         This *private* method removes all data and formatting from the sheet.
         Without this, when new rows and columns are added, the format from the existing cells is used.
@@ -290,11 +326,11 @@ class GoogleSheetManager:
 
                 if len(body.get('requests', [])) > 0:
                     wb.batch_update(body)
+                return True, ''
             except Exception as e:
-                text = 'There was an error removing the previous data and formatting from the Google Sheet.'
-                self.__display('Google Sheets Error', text, '', str(e))
+                return False, 'There was an error removing the previous data and formatting from the Google Sheet.'
 
-    def __resize_sheet(self, ws: gspread.Worksheet, num_rows: int, num_cols: int) -> None:
+    def __resize_sheet(self, ws: gspread.Worksheet, num_rows: int, num_cols: int) -> tuple:
         """
         This *private* method resizes the worksheet to the given dimensions.
 
@@ -313,11 +349,11 @@ class GoogleSheetManager:
                 #   So the following two statements update those properties.
                 ws._properties['gridProperties']['rowCount'] = num_rows
                 ws._properties['gridProperties']['columnCount'] = num_cols
+            return True, ''
         except Exception as e:
-            text = 'There was an error resizing the Google Sheet.'
-            self.__display('Google Sheets Error', text, '', str(e))
+            return False, 'There was an error resizing the Google Sheet.'
 
-    def __format_sheet(self, wb: gspread.Spreadsheet, ws: gspread.Worksheet) -> None:
+    def __format_sheet(self, wb: gspread.Spreadsheet, ws: gspread.Worksheet) -> tuple:
         """
         This *private* method formats the worksheet.
         :param wb: the Google Spreadsheet file
@@ -456,11 +492,11 @@ class GoogleSheetManager:
             try:
                 if len(body.get('requests', [])) > 0:
                     wb.batch_update(body)
+                return True, ''
             except Exception as e:
-                text = 'There was an error formatting the Google Sheet.'
-                self.__display('Google Sheets Error', text, '', str(e))
+                return False, 'There was an error formatting the Google Sheet.'
 
-    def __enter_data_on_sheet(self, ws: gspread.Worksheet) -> None:
+    def __enter_data_on_sheet(self, ws: gspread.Worksheet) -> tuple:
         """
         This *private* method enters the data into the worksheet.
 
@@ -474,24 +510,6 @@ class GoogleSheetManager:
 
         try:
             response = ws.update('A1', data, raw=False)
+            return True, ''
         except Exception as e:
-            text = 'There was an error entering the data on the Google Sheet.'
-            self.__display('Google Sheets Error', text, '', str(e))
-
-    def __display(self, title: str, text: str, informative_text: str = '', detailed_text: str = '',
-                  buttons: qtw.QMessageBox.StandardButton = qtw.QMessageBox.Ok) -> int:
-        message_box = qtw.QMessageBox()
-        message_box.setIcon(qtw.QMessageBox.Information)
-
-        message_box.setWindowTitle(title)
-        message_box.setText(text)
-
-        if informative_text:
-            message_box.setInformativeText(informative_text)
-        if detailed_text:
-            message_box.setDetailedText(detailed_text)
-
-        message_box.setStandardButtons(buttons)
-
-        return_value = message_box.exec_()
-        return return_value
+            return False, 'There was an error entering the data on the Google Sheet.'

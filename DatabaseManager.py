@@ -357,9 +357,6 @@ class DatabaseManager:
         if not success:
             return False, 'Error with student hours list', [], []
 
-        # # The GoogleSheetManager automatically uploads the data when the object is created
-        # google_sheet_manager = GoogleSheetManager(student_names_and_barcode_list, student_hours_list)
-
         self.__delete_connection(cursor, db_conn)
 
         return True, 'Successfully retrieved data', student_names_and_barcode_list, student_hours_list
