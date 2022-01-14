@@ -129,5 +129,5 @@ dmypy.json
 .pyre/
 
 # Project files and folders
-/files/*
+files/
 config.json
