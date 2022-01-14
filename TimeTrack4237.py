@@ -46,8 +46,6 @@ def main() -> None:
     :return: None
     """
 
-    app = qtw.QApplication(sys.argv)
-
     # Check if the program was started with the "-upload" option
     if len(sys.argv) > 1:
         if sys.argv[1] == '-upload':
@@ -56,6 +54,8 @@ def main() -> None:
             sys.exit(0)
 
     else:
+        app = qtw.QApplication(sys.argv)
+
         success, message, config_file = get_config_file()
 
         if success:
