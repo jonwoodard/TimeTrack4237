@@ -2,14 +2,14 @@
 
 This is the student time-tracking software for FRC Team 4237.
 
-##The files directory
+## The files directory
 This application requires a directory called `files` in the main directory to house the following files:
 * timetrack.db  -- the sqlite3 database
 * timetrack*.json -- the google credentials for the Google Sheet
 * student.csv -- used to import your list of students when the app first runs
 * activity.csv -- (optional) used for testing purposes
 
-####Note
+#### Note
 The `files` directory will house the database file, the credentials for the google service account,
 and it may also house the csv file with student names and barcodes.
 
@@ -34,7 +34,7 @@ This application also requires a `config.json` file in the main directory with t
 }
 ```
 
-####Note
+#### Note
 * The `google config` name-value pair is not required if you do not plan to upload the data to a Google Sheet.
 * Replace `timetrack*.json` with the appropriate name. The name will begin with the same name as the Google Sheet and contain a random set of characters after that.
 * Replace `https://docs.google.com/spreadsheets/d/*` with the url to the Google Sheet.
