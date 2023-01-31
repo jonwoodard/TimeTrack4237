@@ -19,9 +19,6 @@ class NumberPadDialogBox(qtw.QDialog, Ui_NumberPadDialogBox):
         self.setWindowFlag(qtc.Qt.WindowTitleHint)       # add a title bar
         self.setWindowFlag(qtc.Qt.WindowSystemMenuHint)  # add the icon in the title bar and close button
 
-        self.buttonBox.button(qtw.QDialogButtonBox.Ok).setEnabled(False)
-        self.clear.setEnabled(False)
-
         # Signal for every button, all connected to the same slot but with a different button name
         self.zero.clicked.connect(lambda: self.button_clicked('0'))
         self.one.clicked.connect(lambda: self.button_clicked('1'))
@@ -42,6 +39,12 @@ class NumberPadDialogBox(qtw.QDialog, Ui_NumberPadDialogBox):
         self.entry.textChanged.connect(self.entry_text_edited)
         self.entry.returnPressed.connect(lambda: self.button_clicked('Enter'))
 
+        self.hide()
+
+    def show_window(self, title: str):
+        self.title.setText(title)
+        self.buttonBox.button(qtw.QDialogButtonBox.Ok).setEnabled(False)
+        self.clear.setEnabled(False)
         self.show()
 
     @qtc.pyqtSlot(str)
@@ -64,13 +67,14 @@ class NumberPadDialogBox(qtw.QDialog, Ui_NumberPadDialogBox):
         elif button_name in ['OK', 'Enter']:
             entry = self.entry.text() or ''
             self.window_closed.emit(entry)
-            self.close()
+            self.entry.clear()
+            self.hide()
 
         elif button_name == 'Cancel':
             self.entry.clear()
             self.entry.setFocus()
             self.window_closed.emit('')
-            self.close()
+            self.hide()
 
     @qtc.pyqtSlot()
     def entry_text_edited(self) -> None:

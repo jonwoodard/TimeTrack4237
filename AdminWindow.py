@@ -16,7 +16,8 @@ class AdminWindow(qtw.QWidget, Ui_AdminWindow):
     # Signal to indicate that the Check In/Out window was closed.
     window_closed = qtc.pyqtSignal(str)
 
-    def __init__(self, parent: qtw.QWidget, db_filename: str, barcode: str):
+    # def __init__(self, parent: qtw.QWidget, db_filename: str, barcode: str):
+    def __init__(self, parent: qtw.QWidget, db_manager: DatabaseManager):
         super().__init__(parent)
         self.setupUi(self)
 
@@ -25,21 +26,11 @@ class AdminWindow(qtw.QWidget, Ui_AdminWindow):
         self.setWindowFlag(qtc.Qt.Dialog)                # dialog box without min or max buttons
         self.setWindowFlag(qtc.Qt.FramelessWindowHint)   # borderless window that cannot be resized
 
-        self.__db_manager = DatabaseManager(db_filename)
-        self.__barcode = barcode
+        self.__db_manager = db_manager
+        self.__gsm = GoogleSheetManager(self.__db_manager)
 
-        # "data" is a 4-tuple: (firstname, lastname, status, total_hours)
-        # success, message, data = self.__db_manager.get_student_data(self.__barcode)
-
-        # Set the data to display in the Check In/Out window.
-        self.adminName.setText("Sir Lance-A-Bot")
-        # self.adminName.setText(data[0] + ' ' + data[1])
-
-        # Set up the model-view structure for the 'Checked In' list.
-        # As the data in the model changes, the view is updated automatically.
-        # The QStringListModel is the easiest to implement since it does not require a customized model.
-        checked_in_list = self.get_checked_in_list()
-        self.__checked_in_model = qtc.QStringListModel(checked_in_list)
+        self.__checked_in_list = []
+        self.__checked_in_model = qtc.QStringListModel(self.__checked_in_list)
         self.checkedInList.setModel(self.__checked_in_model)
         self.checkedInList.setFocusPolicy(qtc.Qt.NoFocus)
         self.checkedInList.setVerticalScrollBarPolicy(qtc.Qt.ScrollBarAlwaysOn)
@@ -52,15 +43,37 @@ class AdminWindow(qtw.QWidget, Ui_AdminWindow):
         self.checkOutAllButton.setToolTip('Check Out ALL students that are currently Checked In')
         self.uploadDataButton.setToolTip('Upload Data to Google Sheets')
 
-        # Disable buttons if needed.
-        if len(checked_in_list) == 0:
-            self.disable_button(self.checkOutAllButton, 'No students currently Checked In')
-
-        # # Signals to indicate which button was clicked.
+        # Signals to indicate which button was clicked.
         self.exitButton.clicked.connect(lambda: self.clicked('Exit'))
         self.uploadDataButton.clicked.connect(lambda: self.clicked('Upload Data'))
         self.checkOutAllButton.clicked.connect(lambda: self.clicked('Check Out ALL'))
 
+        self.hide()
+
+    def __config_window(self):
+        # "data" is a 4-tuple: (firstname, lastname, status, total_hours)
+        # success, message, data = self.__db_manager.get_student_data(self.__barcode)
+
+        # Set the data to display in the Admin window.
+        self.adminName.setText("Sir Lance-A-Bot")
+        # self.adminName.setText(data[0] + ' ' + data[1])
+
+        # Set up the model-view structure for the 'Checked In' list.
+        # As the data in the model changes, the view is updated automatically.
+        # The QStringListModel is the easiest to implement since it does not require a customized model.
+        self.__checked_in_model.setStringList(self.__checked_in_list)
+
+        # Disable buttons if needed.
+        if len(self.__checked_in_list) == 0:
+            self.set_button_state(self.checkOutAllButton, 'No students currently Checked In', False)
+        else:
+            self.set_button_state(self.checkOutAllButton, 'Check Out ALL students that are currently Checked In', True)
+
+        self.set_button_state(self.uploadDataButton, 'Upload Data to Google Sheets', True)
+
+    def show_window(self, checked_in_list: list):
+        self.__checked_in_list = checked_in_list
+        self.__config_window()
         if platform.system() == 'Windows':
             self.show()
         else:
@@ -78,65 +91,54 @@ class AdminWindow(qtw.QWidget, Ui_AdminWindow):
         # Determine which button was clicked and set the message to be displayed.
         if button_name == 'Exit':
             self.window_closed.emit('Successful Exit.')
-            self.close()
+            self.__clean_up()
+            self.hide()
 
         elif button_name == 'Upload Data':
-            gsm = GoogleSheetManager()
-            success, title, message = gsm.upload_data()
+            success, title, message = self.__gsm.upload_data()
             if success:
                 text = 'The data was uploaded successfully to the Google Sheet.'
                 self.__display('Upload Success', text)
             else:
                 self.__display(title, message)
 
-            self.disable_button(self.uploadDataButton, 'Data already uploaded')
+            self.set_button_state(self.uploadDataButton, 'Data already uploaded', False)
 
         elif button_name == 'Check Out ALL':
             # "data" is a list of tuples: [('id', 'firstname', 'lastname'), ... ]
+            # NOTE: this is not the same format as self.__checked_in_list
             success, message, data = self.__db_manager.get_checked_in_list()
             for tup in data:
                 self.__db_manager.checkout_student(tup[0])
 
             self.__checked_in_model.setStringList([])
-            self.disable_button(self.checkOutAllButton, 'No students currently Checked In')
+            self.set_button_state(self.checkOutAllButton, 'No students currently Checked In', False)
 
-    def disable_button(self, button: qtw.QPushButton, tool_tip: str) -> None:
+    def set_button_state(self, button: qtw.QPushButton, tool_tip: str, is_enabled: bool) -> None:
         """
         This method enables the correct buttons and sets the tool tips font.
 
         :param button: the button to disable
         :param tool_tip: the tool tip to display
+        :param is_enabled: is the button enabled
         :return: None
         """
 
         if button:
-            button.setEnabled(False)
+            button.setEnabled(is_enabled)
             button.setToolTip(tool_tip)
+
             font = qtg.QFont()
-            font.setBold(False)
-            font.setPointSize(24)
+            font.setBold(is_enabled)
+            if is_enabled:
+                font.setPointSize(26)
+            else:
+                font.setPointSize(24)
             button.setFont(font)
 
-    def get_checked_in_list(self) -> list:
-        """
-        This method returns the 'Checked In' list to display on the Main window.
-        The QStringListModel requires a list of strings, so this method formats the data for that.
-
-        :return: a list of strings: ['<id>  lastname, firstname', ... ]
-        """
-
-        format_data = list()
-
-        # "data" is a list of tuples: [('id', 'firstname', 'lastname'), ... ]
-        success, message, data = self.__db_manager.get_checked_in_list()
-        if success:
-            # Concatenate each tuple of strings into a single formatted string
-            # "format_data" is a list of strings: ['<id>  lastname, firstname', ... ]
-            for tup in data:
-                # format_data.append('<' + tup[0] + '>  ' + tup[2] + ', ' + tup[1])
-                format_data.append(tup[2] + ', ' + tup[1])
-
-        return format_data
+    def __clean_up(self):
+        self.__checked_in_list.clear()
+        self.__checked_in_model.setStringList([])
 
     def __display(self, title: str, text: str, informative_text: str = '', detailed_text: str = '',
                   buttons: qtw.QMessageBox.StandardButton = qtw.QMessageBox.Ok) -> int:

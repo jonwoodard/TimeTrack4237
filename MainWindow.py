@@ -1,3 +1,4 @@
+import gc
 import platform
 import csv
 import os
@@ -22,8 +23,14 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
         self.setWindowFlag(qtc.Qt.FramelessWindowHint)  # borderless window that cannot be resized
 
         self.__filename = filename
-
+        self.__barcode = ''
         self.__db_manager = DatabaseManager(self.__filename)
+        self.__in_out_window = InOutWindow(self, self.__db_manager)
+        self.__admin_window = AdminWindow(self, self.__db_manager)
+        self.__admin_pin_dialog_box = NumberPadDialogBox(self)
+
+        # self.__admin_pin_dialog_box.title.setText('Enter PIN')
+        self.__admin_pin_dialog_box.entry.setEchoMode(qtw.QLineEdit.Password)
 
         self.__timer = qtc.QTimer()       # a timer to display messages for a designated amount of time
         self.__timer.setSingleShot(True)
@@ -31,8 +38,8 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
         # Set up the model-view structure for the 'Checked In' list.
         # As the data in the model changes, the view is updated automatically.
         # The QStringListModel is the easiest to implement since it does not require a customized model.
-        checked_in_list = self.get_checked_in_list()
-        self.__checked_in_model = qtc.QStringListModel(checked_in_list)
+        self.__checked_in_list = self.get_checked_in_list()
+        self.__checked_in_model = qtc.QStringListModel(self.__checked_in_list)
         self.checkedInList.setModel(self.__checked_in_model)
 
         self.checkedInList.setFocusPolicy(qtc.Qt.NoFocus)
@@ -48,6 +55,19 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
         # When a barcode is scanned, the 'returnPressed' signal emits which calls the 'barcode_scanned' slot.
         self.barcode.returnPressed.connect(lambda: self.barcode_scanned(self.barcode.text()))
 
+        # Refresh the Main window when the Check In/Out window closes.
+        # The "window_closed" signal emits a "message" to display on the Main window for 3 seconds.
+        self.__in_out_window.window_closed.connect(lambda message: self.refresh_window(message, 3))
+
+        # When the Number Pad dialog box closes, decide whether to display the Admin window or an Error message.
+        # The "window_closed" signal emits two strings:
+        #   (1) the button clicked to close the window (OK or Cancel) and (2) the pin entered.
+        self.__admin_pin_dialog_box.window_closed.connect(
+            lambda pin: self.admin_pin_dialog_box_closed(pin))
+
+        # Display the Admin window when the Admin PIN is correct.
+        self.__admin_window.window_closed.connect(lambda: self.refresh_window('', 0))
+
         # Use the timer to clear the message. The self.refresh_window() method will start the timer.
         # The static method qtc.QTimer.singleShot() will perform a similar operation, however
         #   if two students check in within the allotted time (3 seconds in this case)
@@ -59,6 +79,7 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
             self.show()
         else:
             self.showFullScreen()
+
         self.check_database()  # check if the database file exists after the main window displays
 
     def check_database(self) -> None:
@@ -123,28 +144,17 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
         :return: None
         """
 
-        success, message, barcode_type = self.__db_manager.check_barcode(barcode)
+        self.__barcode = barcode
+        success, message, barcode_type = self.__db_manager.check_barcode(self.__barcode)
         # The "barcode_type" is either a Student, Admin, or Invalid.
 
         if barcode_type == 'Student':
             # Display the Check In/Out window.
-            in_out_window = InOutWindow(self, self.__filename, barcode)
-
-            # Refresh the Main window when the Check In/Out window closes.
-            # The "window_closed" signal emits a "message" to display on the Main window for 3 seconds.
-            in_out_window.window_closed.connect(lambda message: self.refresh_window(message, 3))
+            self.__in_out_window.show_window(self.__barcode)
 
         elif barcode_type == 'Admin':
             # Display a Number Pad dialog box for the user to enter their Admin PIN.
-            admin_pin_dialog_box = NumberPadDialogBox(self)
-            admin_pin_dialog_box.title.setText('Enter PIN')
-            admin_pin_dialog_box.entry.setEchoMode(qtw.QLineEdit.Password)
-
-            # When the Number Pad dialog box closes, decide whether to display the Admin window or an Error message.
-            # The "window_closed" signal emits two strings:
-            #   (1) the button clicked to close the window (OK or Cancel) and (2) the pin entered.
-            admin_pin_dialog_box.window_closed.connect(
-                lambda pin: self.admin_pin_dialog_box_closed(barcode, pin))
+            self.__admin_pin_dialog_box.show_window('Enter PIN')
 
         elif barcode_type == 'Invalid':
             # Display an error message on the Main window for an Invalid barcode.
@@ -154,8 +164,8 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
             # Display an error message on the Main window because of a Database error.
             self.refresh_window('Database Error. See Admin.', 3)
 
-    @qtc.pyqtSlot(str, str)
-    def admin_pin_dialog_box_closed(self, barcode: str, pin: str) -> None:
+    @qtc.pyqtSlot(str)
+    def admin_pin_dialog_box_closed(self, pin: str) -> None:
         """
         This slot is called when the Number Pad dialog box is closed to get an Admin PIN.
         It checks the Admin PIN to decide whether to display the Admin window or an error message on the Main window.
@@ -168,14 +178,16 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
         if pin:
 
             # Check if the Admin PIN is correct.
-            success, message, correct_pin = self.__db_manager.check_pin(barcode, pin)
+            success, message, correct_pin = self.__db_manager.check_pin(self.__barcode, pin)
             if correct_pin:
                 # Display the Admin window since the Admin PIN is correct.
-                admin_window = AdminWindow(self, self.__filename, barcode)
-                admin_window.window_closed.connect(lambda: self.refresh_window('', 0))
+                self.__admin_window.show_window(self.__checked_in_list)
+
             else:
                 # Display an error message on the Main window since the PIN was incorrect.
                 self.refresh_window('Incorrect PIN.', 3)
+
+            pin = None
 
         else:  # if the 'Cancel' button was clicked (or any other reason)
             self.refresh_window()
@@ -191,10 +203,11 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
 
         # Clear the barcode that was scanned.
         self.barcode.clear()
+        self.__barcode = ''
 
         # Update the 'Checked In' list.
-        checked_in_list = self.get_checked_in_list()
-        self.__checked_in_model.setStringList(checked_in_list)
+        self.__checked_in_list = self.get_checked_in_list()
+        self.__checked_in_model.setStringList(self.__checked_in_list)
 
         # Display the "message" for X seconds if one was passed, otherwise clear the message
         if message:
@@ -204,6 +217,9 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
             self.__timer.start(int(1000 * seconds))
         else:
             self.message.clear()
+
+        # print(len(gc.get_referrers(self.__checked_in_list)))
+        gc.collect()
 
     def get_checked_in_list(self) -> list:
         """

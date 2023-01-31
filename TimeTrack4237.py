@@ -49,9 +49,14 @@ def main() -> None:
     # Check if the program was started with the "-upload" option
     if len(sys.argv) > 1:
         if sys.argv[1] == '-upload':
-            gsm = GoogleSheetManager()
-            gsm.upload_data()
-            sys.exit(0)
+
+            success, message, config_file = get_config_file()
+            if success:
+                success, message, db_file = get_database_file(config_file)
+                if success:
+                    gsm = GoogleSheetManager(db_file)
+                    gsm.upload_data()
+                    sys.exit(0)
 
     else:
         app = qtw.QApplication(sys.argv)

@@ -124,6 +124,9 @@ class HoursTableModel(qtc.QAbstractTableModel):
 
         return None
 
+    def resetData(self, hours_table_model: list):
+        self.__data = hours_table_model
+
 
 class InOutWindow(qtw.QWidget, Ui_InOutWindow):
     """The Check In/Out window contains a Check In button, a Check Out button, a Cancel button,
@@ -132,7 +135,7 @@ class InOutWindow(qtw.QWidget, Ui_InOutWindow):
     # Signal to indicate that the Admin window was closed.
     window_closed = qtc.pyqtSignal(str)
 
-    def __init__(self, parent: qtw.QWidget, db_filename: str, barcode: str):
+    def __init__(self, parent: qtw.QWidget, db_manager: DatabaseManager):
         super().__init__(parent)
         self.setupUi(self)
 
@@ -141,9 +144,35 @@ class InOutWindow(qtw.QWidget, Ui_InOutWindow):
         self.setWindowFlag(qtc.Qt.Dialog)                # dialog box without min or max buttons
         self.setWindowFlag(qtc.Qt.FramelessWindowHint)   # borderless window that cannot be resized
 
-        self.__db_manager = DatabaseManager(db_filename)
-        self.__barcode = barcode
+        self.__db_manager = db_manager
+        self.__barcode = ''
+        self.__status = ''
 
+        # Create the Model for the hoursTable
+        self.__hours_table_header = ('Day', 'Date', 'Hours')
+        self.__hours_table_column_width = (60, 130, 90)  # Needs to be less than 300 total
+        self.__table_model = HoursTableModel([('', '', '')], self.__hours_table_header)
+        self.hoursTable.setModel(self.__table_model)
+        self.hoursTable.setEditTriggers(qtw.QAbstractItemView.NoEditTriggers)
+        self.hoursTable.horizontalHeader().setFixedHeight(45)
+        self.hoursTable.setSelectionMode(qtw.QAbstractItemView.NoSelection)
+        self.hoursTable.setFocusPolicy(qtc.Qt.NoFocus)
+        self.hoursTable.setVerticalScrollBarPolicy(qtc.Qt.ScrollBarAlwaysOn)
+        self.hoursTable.setHorizontalScrollBarPolicy(qtc.Qt.ScrollBarAlwaysOff)
+        self.hoursTable.setAutoScroll(False)
+        self.hoursTable.setAutoScrollMargin(400)
+
+        for col in range(len(self.__hours_table_column_width)):
+            self.hoursTable.setColumnWidth(col, self.__hours_table_column_width[col])
+
+        # Signals to indicate which button was clicked.
+        self.cancelButton.clicked.connect(lambda: self.clicked('Cancel'))
+        self.checkinButton.clicked.connect(lambda: self.clicked('Check In'))
+        self.checkoutButton.clicked.connect(lambda: self.clicked('Check Out'))
+
+        self.hide()
+
+    def __config_window(self):
         # "data" is a 4-tuple: (firstname, lastname, status, total_hours)
         success, message, data = self.__db_manager.get_student_data(self.__barcode)
 
@@ -156,34 +185,27 @@ class InOutWindow(qtw.QWidget, Ui_InOutWindow):
         success, message, hours_table_model, total_hours = self.__db_manager.get_student_hours_table(self.__barcode)
         self.totalHours.setNum(total_hours)
 
-        # Create the Model for the hoursTable
-        hours_table_header = ('Day', 'Date', 'Hours')
-        hours_table_column_width = (60, 130, 90)  # Needs to be less than 300 total
-        self.table_model = HoursTableModel(hours_table_model, hours_table_header)
-        self.hoursTable.setModel(self.table_model)
-        self.hoursTable.setEditTriggers(qtw.QAbstractItemView.NoEditTriggers)
-        self.hoursTable.horizontalHeader().setFixedHeight(45)
-        self.hoursTable.setSelectionMode(qtw.QAbstractItemView.NoSelection)
-        self.hoursTable.setFocusPolicy(qtc.Qt.NoFocus)
-        self.hoursTable.setVerticalScrollBarPolicy(qtc.Qt.ScrollBarAlwaysOn)
-        self.hoursTable.setHorizontalScrollBarPolicy(qtc.Qt.ScrollBarAlwaysOff)
-        self.hoursTable.setAutoScroll(False)
-        self.hoursTable.setAutoScrollMargin(400)
+        if not hours_table_model:
+            hours_table_model = [('', '', '')]
 
-        for col in range(len(hours_table_column_width)):
-            self.hoursTable.setColumnWidth(col, hours_table_column_width[col])
+        self.__table_model.beginResetModel()
+        self.__table_model.resetData(hours_table_model)
+        self.__table_model.endResetModel()
+
+        for col in range(len(self.__hours_table_column_width)):
+            self.hoursTable.setColumnWidth(col, self.__hours_table_column_width[col])
 
         # Disable either the Check In or Check Out button.
         if self.__status == 'Checked In':
-            self.disable_button(self.checkinButton, 'Already Checked In')
+            self.set_button_state(self.checkinButton, 'Already Checked In', False)
+            self.set_button_state(self.checkoutButton, '', True)
         elif self.__status == 'Checked Out':
-            self.disable_button(self.checkoutButton, 'Not Checked In')
+            self.set_button_state(self.checkinButton, '', True)
+            self.set_button_state(self.checkoutButton, 'Not Checked In', False)
 
-        # Signals to indicate which button was clicked.
-        self.cancelButton.clicked.connect(lambda: self.clicked('Cancel'))
-        self.checkinButton.clicked.connect(lambda: self.clicked('Check In'))
-        self.checkoutButton.clicked.connect(lambda: self.clicked('Check Out'))
-
+    def show_window(self, barcode: str):
+        self.__barcode = barcode
+        self.__config_window()
         if platform.system() == 'Windows':
             self.show()
         else:
@@ -209,24 +231,37 @@ class InOutWindow(qtw.QWidget, Ui_InOutWindow):
             message = 'Nothing done.'
 
         self.window_closed.emit(message)
-        self.close()
+        self.__clean_up()
+        self.hide()
 
-    def disable_button(self, button: qtw.QPushButton, tool_tip: str) -> None:
+    def set_button_state(self, button: qtw.QPushButton, tool_tip: str, is_enabled: bool) -> None:
         """
         This method enables the correct buttons and sets the tool tips font.
 
         :param button: the button to disable
         :param tool_tip: the tool tip to display
+        :param is_enabled: is the button enabled
         :return: None
         """
 
         if button:
-            button.setEnabled(False)
+            button.setEnabled(is_enabled)
             button.setToolTip(tool_tip)
+
             font = qtg.QFont()
-            font.setBold(False)
-            font.setPointSize(24)
+            font.setBold(is_enabled)
+            if is_enabled:
+                font.setPointSize(26)
+            else:
+                font.setPointSize(24)
             button.setFont(font)
+
+    def __clean_up(self):
+        self.__barcode = ''
+        self.__status = ''
+        self.__table_model.beginResetModel()
+        self.__table_model.resetData([('', '', '')])
+        self.__table_model.endResetModel()
 
     def __display(self, title: str, text: str, informative_text: str = '', detailed_text: str = '',
                   buttons: qtw.QMessageBox.StandardButton = qtw.QMessageBox.Ok) -> int:

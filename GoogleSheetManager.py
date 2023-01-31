@@ -23,7 +23,12 @@ class GoogleSheetManager:
     # These are the same limits for reading, but that is not an issue with this application.
     # Use the update() and batch_update() methods to help reduce API calls.
 
-    def __init__(self):
+    def __init__(self, db_manager_or_filename):
+        if isinstance(db_manager_or_filename, DatabaseManager):
+            self.__db_manager = db_manager_or_filename
+        else:  # elif isinstance(db_manager_or_filename, str):
+            self.__db_manager = DatabaseManager(db_manager_or_filename)
+
         # self.__student_names_and_barcode_list = [ (lastname0, firstname0, barcode0), ... ]
         self.__student_names_and_barcode_list = []
 
@@ -45,37 +50,38 @@ class GoogleSheetManager:
         success = False
         message = ''
 
-        success, message, db_filename = self.__get_database_file()
-        if not success:
-            return False, 'Database Error', message
-
-        db_manager = DatabaseManager(db_filename)
-        success, message, self.__student_names_and_barcode_list, self.__student_hours_list = db_manager.get_google_sheet_data()
+        success, message, self.__student_names_and_barcode_list, self.__student_hours_list = self.__db_manager.get_google_sheet_data()
         # If there are no names and barcodes, then there is nothing to upload.
         # The student_hours_list could be empty, before any student has logged hours, which is fine.
         if not (success and self.__student_names_and_barcode_list):
+            self.__clean_up()
             return False, 'Database Error', message
 
         self.__create_header_list()
         # The header list must have 3 lists at this point. [ [years...], [weeks...], [dates...] ]
         if len(self.__header_list) != 3:
+            self.__clean_up()
             return False, 'Header List Error', 'The header list failed to create properly.'
 
         self.__create_data_list()
         # The data_list should NOT be empty at this point.
         if not self.__data_list:
+            self.__clean_up()
             return False, 'Data List Error', 'The data list failed to create properly.'
 
         success, message, google_config = self.__get_google_config()
         if not success:
+            self.__clean_up()
             return False, 'Google Sheets Error', message
 
         success, message, wb, ws = self.__open_sheet(google_config)
         if not (success and wb and ws):
+            self.__clean_up()
             return False, 'Google Sheets Error', message
 
         success, message = self.__remove_data_and_formatting(wb, ws)
         if not success:
+            self.__clean_up()
             return False, 'Google Sheets Error', message
 
         num_rows = len(self.__data_list) + 1
@@ -86,39 +92,21 @@ class GoogleSheetManager:
         #   otherwise any leading zeros will be lost.
         success, message = self.__resize_sheet(ws, num_rows, num_cols)
         if not success:
+            self.__clean_up()
             return False, 'Google Sheets Error', message
 
         success, message = self.__format_sheet(wb, ws)
         if not success:
+            self.__clean_up()
             return False, 'Google Sheets Error', message
 
         success, message = self.__enter_data_on_sheet(ws)
         if not success:
+            self.__clean_up()
             return False, 'Google Sheets Error', message
 
+        self.__clean_up()
         return True, 'Upload Successful', 'The data was uploaded successfully to the Google Sheet.'
-
-    def __get_database_file(self) -> tuple:
-        config_file = os.path.join(THIS_DIRECTORY, CONFIG_FILENAME)
-
-        # Check if the google config file exists.
-        if not os.path.isfile(config_file):
-            return False, 'The "config.json" file does not exist.', ''
-
-        # Open the config file, read it, and close the file.
-        with open(config_file, 'r') as fh:
-            try:
-                # Read the json string from the file into the config dictionary.
-                config = json.load(fh)
-
-                # Store the database config dictionary
-                database_config = config['database config']
-
-                folder, file = os.path.split(database_config['filename'])
-                db_file = os.path.join(THIS_DIRECTORY, folder, file)
-                return True, 'Found database filename.', db_file
-            except Exception as e:
-                return False, 'The "config.json" file is unreadable.', ''
 
     def __create_header_list(self) -> None:
         """
@@ -321,7 +309,7 @@ class GoogleSheetManager:
 
             try:
                 # Clear all data on the sheet
-                # ws.clear() cannot be completed with a ws.batch_update() call, so it done separate
+                # ws.clear() cannot be completed with a ws.batch_update() call, so it is done separate
                 response = ws.clear()
 
                 if len(body.get('requests', [])) > 0:
@@ -513,3 +501,9 @@ class GoogleSheetManager:
             return True, ''
         except Exception as e:
             return False, 'There was an error entering the data on the Google Sheet.'
+
+    def __clean_up(self):
+        self.__student_names_and_barcode_list.clear()
+        self.__student_hours_list.clear()
+        self.__header_list.clear()
+        self.__data_list.clear()
