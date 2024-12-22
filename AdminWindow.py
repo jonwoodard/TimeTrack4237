@@ -1,3 +1,4 @@
+import gc
 import platform
 
 from PyQt5 import QtWidgets as qtw
@@ -13,7 +14,7 @@ class AdminWindow(qtw.QWidget, Ui_AdminWindow):
     """The Admin contains an Upload Data button, a Check Out ALL button, a Cancel button,
         and the Hours Logged table."""
 
-    # Signal to indicate that the Check In/Out window was closed.
+    # Signal to indicate that the Admin window was closed.
     window_closed = qtc.pyqtSignal(str)
 
     # def __init__(self, parent: qtw.QWidget, db_filename: str, barcode: str):
@@ -91,8 +92,8 @@ class AdminWindow(qtw.QWidget, Ui_AdminWindow):
         # Determine which button was clicked and set the message to be displayed.
         if button_name == 'Exit':
             self.window_closed.emit('Successful Exit.')
-            self.__clean_up()
             self.hide()
+            self.__clean_up()
 
         elif button_name == 'Upload Data':
             success, title, message = self.__gsm.upload_data()
@@ -137,8 +138,10 @@ class AdminWindow(qtw.QWidget, Ui_AdminWindow):
             button.setFont(font)
 
     def __clean_up(self):
+        gc.enable()
         self.__checked_in_list.clear()
         self.__checked_in_model.setStringList([])
+        gc.collect()
 
     def __display(self, title: str, text: str, informative_text: str = '', detailed_text: str = '',
                   buttons: qtw.QMessageBox.StandardButton = qtw.QMessageBox.Ok) -> int:

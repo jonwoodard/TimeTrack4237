@@ -1,3 +1,4 @@
+import gc
 import os
 import gspread
 import gspread.utils
@@ -46,16 +47,65 @@ class GoogleSheetManager:
         # self.__data_list = [ ['lastname', 'firstname', 'barcode', total_hours, week1_hours, week2_hours, ...] ...]
         self.__data_list = []
 
+        #self.__raw_data_list = [ [ 'lastname', 'firstname', 'barcode', checkin, checkout, hours ] ]
+        self.__raw_data_list = []
+
     def upload_data(self) -> tuple:
+        # Garbage collection slows down the process, so disable it during the upload process.
+        # Garbage collection is enabled again in the __clean_up() method.
+        gc.disable()
+
         success = False
+        title = ''
         message = ''
 
         success, message, self.__student_names_and_barcode_list, self.__student_hours_list = self.__db_manager.get_google_sheet_data()
-        # If there are no names and barcodes, then there is nothing to upload.
-        # The student_hours_list could be empty, before any student has logged hours, which is fine.
-        if not (success and self.__student_names_and_barcode_list):
+
+        # Get the Google config info
+        success, message, google_config = self.__get_google_config()
+        if not success:
+            self.__clean_up()
+            return False, 'Google Sheets Error', message
+
+        # Open the spreadsheet, but wait to open the worksheet
+        success, message, wb = self.__open_spreadsheet(google_config)
+        if not (success and wb):
+            self.__clean_up()
+            return False, 'Google Sheets Error', message
+
+        # Check if the worksheets exists in the spreadsheet
+        self.__check_spreadsheet(wb, google_config)
+
+        # Upload the worksheet of formatted and condensed data
+        success, title, message = self.__upload_worksheet(google_config, wb)
+        if not success:
             self.__clean_up()
             return False, 'Database Error', message
+
+        # Upload the full activity table raw data
+        success, title, message = self.__upload_raw_data_worksheet(google_config, wb)
+        if not success:
+            self.__clean_up()
+            return False, 'Database Error', message
+
+        # Clean it up and return a "successful" message
+        self.__clean_up()
+
+        return True, 'Upload Successful', 'The data was uploaded successfully to the Google Sheet.'
+
+    def __upload_worksheet(self, google_config: dict, wb: gspread.Spreadsheet) -> tuple:
+
+        success = False
+        message = ''
+
+        ws_name = google_config.get('worksheet name')
+        if not ws_name:
+            return False, 'Google Sheets Error', 'The "worksheet name" key is missing in config.json file.'
+
+        success, message, ws = self.__open_sheet(wb, ws_name)
+        if not (success and ws):
+            self.__clean_up()
+            return False, 'Google Sheets Error', message
 
         self.__create_header_list()
         # The header list must have 3 lists at this point. [ [years...], [weeks...], [dates...] ]
@@ -64,20 +114,6 @@ class GoogleSheetManager:
             return False, 'Header List Error', 'The header list failed to create properly.'
 
         self.__create_data_list()
-        # The data_list should NOT be empty at this point.
-        if not self.__data_list:
-            self.__clean_up()
-            return False, 'Data List Error', 'The data list failed to create properly.'
-
-        success, message, google_config = self.__get_google_config()
-        if not success:
-            self.__clean_up()
-            return False, 'Google Sheets Error', message
-
-        success, message, wb, ws = self.__open_sheet(google_config)
-        if not (success and wb and ws):
-            self.__clean_up()
-            return False, 'Google Sheets Error', message
 
         success, message = self.__remove_data_and_formatting(wb, ws)
         if not success:
@@ -100,12 +136,60 @@ class GoogleSheetManager:
             self.__clean_up()
             return False, 'Google Sheets Error', message
 
-        success, message = self.__enter_data_on_sheet(ws)
+        if self.__data_list:
+            data = [self.__header_list[2]] + self.__data_list
+        else:
+            data = [self.__header_list[2]]
+
+        success, message = self.__enter_data_on_sheet(ws, data)
         if not success:
             self.__clean_up()
             return False, 'Google Sheets Error', message
 
-        self.__clean_up()
+        return True, 'Upload Successful', 'The worksheet was uploaded successfully to the Google Sheet.'
+
+    def __upload_raw_data_worksheet(self, google_config: dict, wb: gspread.Spreadsheet) -> tuple:
+        # Upload raw data sheet
+
+        raw_data_ws_name = google_config.get('raw data worksheet name')
+        if not raw_data_ws_name:
+            return False, 'Google Sheets Error', 'The "raw data worksheet name" key is missing in config.json file.'
+
+        success, message, ws_raw_data = self.__open_sheet(wb, raw_data_ws_name)
+        if not (success and ws_raw_data):
+            self.__clean_up()
+            return False, 'Google Sheets Error', message
+
+        self.__create_raw_data_list()
+
+        success, message = self.__remove_data_and_formatting(wb, ws_raw_data)
+        if not success:
+            self.__clean_up()
+            return False, 'Google Sheets Error', message
+
+        # The order below matters: (1) resize the sheet, (2) format the sheet, (3) enter the data
+        # The barcode column must be set to TEXT number format before the data is entered,
+        #   otherwise any leading zeros will be lost.
+        num_rows = 1
+        num_cols = 1
+        if len(self.__raw_data_list) > 0:
+            num_rows = len(self.__raw_data_list)
+            num_cols = len(self.__raw_data_list[0])
+
+        success, message = self.__resize_sheet(ws_raw_data, num_rows, num_cols)
+        if not success:
+            return False, 'Google Sheets Error', message
+
+        success, message = self.__format_raw_data_sheet(wb, ws_raw_data)
+        if not success:
+            self.__clean_up()
+            return False, 'Google Sheets Error', message
+
+        success, message = self.__enter_data_on_sheet(ws_raw_data, self.__raw_data_list)
+        if not success:
+            self.__clean_up()
+            return False, 'Google Sheets Error', message
+
         return True, 'Upload Successful', 'The data was uploaded successfully to the Google Sheet.'
 
     def __create_header_list(self) -> None:
@@ -221,6 +305,13 @@ class GoogleSheetManager:
             # Add this "record" to the "data_list"
             self.__data_list[data_list_index].append(week_hours)
 
+    def __create_raw_data_list(self) -> None:
+        success, message, raw_data = self.__db_manager.get_all_activity_table_data()
+
+        self.__raw_data_list = [['Last Name', 'First Name', 'Barcode', 'Checkin', 'Checkout', 'Hours']]
+        for tpl in raw_data:
+            self.__raw_data_list = self.__raw_data_list + [list(tpl)]
+
     def __get_google_config(self) -> tuple:
         """
         This *private* method gets the configuration data in order to open the Google Sheet.
@@ -232,37 +323,80 @@ class GoogleSheetManager:
 
         # Check if the google config file exists.
         if not os.path.isfile(config_file):
-            return False, 'Google config file does not exist.', {}
+            return False, 'The config.json file does not exist.', {}
 
         # Open the files if it exists.
         with open(config_file, 'r') as fh:
             try:
                 # Read the json string from the file into the config dictionary.
                 config = json.load(fh)
+
                 # Store the google config dictionary
-                google_config = config['google config']
+                google_config = config.get('google config')
+                if not google_config:
+                    return False, 'The "google config" key is missing in config.json file.', {}
+
                 return True, '', google_config
+
             except Exception as e:
-                return False, 'Google config file is unreadable.', {}
+                return False, 'The config.json file is unreadable.', {}
 
-    def __open_sheet(self, google_config: dict) -> tuple:
+    def __open_spreadsheet(self, google_config: dict) -> tuple:
         """
-        This *private* method opens the Google Sheet.
+        This *private* method opens the Google Spreadsheet.
 
-        :param google_config: the google config dictionary to open the Google Sheet
-        :return: wb = Google Spreadsheet file, ws = one Worksheet in the file
+        :param google_config: the google config dictionary to open the Google Spreadsheet
+        :return: wb = Google Spreadsheet file
         """
         try:
             # See the gspread documentation to open a Google Sheet
-            folder, file = os.path.split(google_config['service account'])
+            service_account = google_config.get('service account')
+            if not service_account:
+                return False, 'The "service account" key is missing in config.json file.', None
+
+            folder, file = os.path.split(service_account)
             credential_file = os.path.join(THIS_DIRECTORY, folder, file)
 
-            gc = gspread.service_account(credential_file)
-            wb = gc.open_by_url(google_config['spreadsheet url'])
-            ws = wb.worksheet(google_config['worksheet name'])
-            return True, '', wb, ws
+            gspread_client = gspread.service_account(credential_file)
+            spreadsheet_url = google_config.get('spreadsheet url')
+            if not spreadsheet_url:
+                return False, 'The "spreadsheet url" key is missing in config.json file.', None
+
+            wb = gspread_client.open_by_url(spreadsheet_url)
+
+            return True, '', wb
         except Exception as e:
-            return False, 'There was an error with the Google Sheets file.', None, None
+            return False, 'There was an error with the Google Sheets file.', None
+
+    def __check_spreadsheet(self, wb: gspread.Spreadsheet, google_config: dict) -> None:
+        worksheet_exists = False
+        raw_data_worksheet_exists = False
+
+        for worksheet in wb.worksheets():
+            if worksheet.title == google_config.get('worksheet name'):
+                worksheet_exists = True
+            elif worksheet.title == google_config.get('raw data worksheet name'):
+                raw_data_worksheet_exists = True
+
+        if not worksheet_exists:
+            wb.add_worksheet(google_config.get('worksheet name'), 1, 1)
+        if not raw_data_worksheet_exists:
+            wb.add_worksheet(google_config.get('raw data worksheet name'), 1, 1)
+
+    def __open_sheet(self, wb: gspread.Spreadsheet, ws_name: str) -> tuple:
+        """
+        This *private* method opens the Google Sheet.
+
+        :param wb: Google Spreadsheet file
+        :param ws_name: Worksheet name
+        :return: ws = one Worksheet in the file
+        """
+        try:
+            # See the gspread documentation to open a Google Sheet
+            ws = wb.worksheet(ws_name)
+            return True, '', ws
+        except Exception as e:
+            return False, 'There was an error with the Google Sheets file.', None
 
     def __remove_data_and_formatting(self, wb: gspread.Spreadsheet, ws: gspread.Worksheet) -> tuple:
         """
@@ -275,48 +409,41 @@ class GoogleSheetManager:
         """
 
         # See the Google Sheets API and gspread documentation for help
-        sheet_id = ws._properties['sheetId']
-        if sheet_id:
+        sheet_id = ws._properties.get('sheetId')
+        if not sheet_id:
+            return False, 'There was an error removing the previous data and formatting from the Google Sheet.'
 
-            # Clear all formatting on the sheet
-            d0 = {'updateCells': {
-                'range': {'sheetId': sheet_id},
-                'fields': 'userEnteredFormat'}}
-            body = {'requests': [d0]}
+        lst = []
 
-            if ws.col_count > 0:
-                # Reset the column width to 100 pixels (default) so that new columns are added with this default size.
-                d1 = {'updateDimensionProperties': {
-                    'range': {'sheetId': sheet_id, 'dimension': 'COLUMNS', 'startIndex': 0, 'endIndex': ws.col_count},
-                    'properties': {'pixelSize': 100},
-                    'fields': 'pixelSize'}}
-                body.get('requests', []).append(d1)
+        # Clear all formatting on the sheet
+        lst.append(self.__clear_formatting(sheet_id))
 
-            if ws.row_count > 0:
-                # Reset the row height to 21 pixels (default) so that new rows are added with this default size.
-                d2 = {'updateDimensionProperties': {
-                    'range': {'sheetId': sheet_id, 'dimension': 'ROWS', 'startIndex': 0, 'endIndex': ws.row_count},
-                    'properties': {'pixelSize': 21},
-                    'fields': 'pixelSize'}}
-                body.get('requests', []).append(d2)
+        if ws.col_count > 0:
+            # Reset the column width to 100 pixels (default) so that new columns are added with this default size.
+            lst.append(self.__set_column_width(sheet_id, 0, ws.col_count, 100))
 
-            d3 = {'updateSheetProperties': {
-                'properties': {
-                    'sheetId': sheet_id,
-                    'gridProperties': {'frozenRowCount': 0, 'frozenColumnCount': 0}},
-                'fields': 'gridProperties(frozenRowCount, frozenColumnCount)'}}
-            body.get('requests', []).append(d3)
+        if ws.row_count > 0:
+            # Reset the row height to 21 pixels (default) so that new rows are added with this default size.
+            lst.append(self.__set_row_height(sheet_id, 0, ws.row_count, 21))
 
-            try:
-                # Clear all data on the sheet
-                # ws.clear() cannot be completed with a ws.batch_update() call, so it is done separate
-                response = ws.clear()
+        # Unfreeze rows and columns
+        lst.append(self.__set_frozen_rows(sheet_id, 0))
+        lst.append(self.__set_frozen_columns(sheet_id, 0))
 
-                if len(body.get('requests', [])) > 0:
-                    wb.batch_update(body)
-                return True, ''
-            except Exception as e:
-                return False, 'There was an error removing the previous data and formatting from the Google Sheet.'
+        # Clear any filters
+        lst.append(self.__clear_filter(sheet_id))
+
+        try:
+            # Clear all data on the sheet
+            # ws.clear() cannot be completed with a ws.batch_update() call, so it is done separate
+            response = ws.clear()
+
+            if len(lst) > 0:
+                body = {'requests': lst}
+                wb.batch_update(body)
+            return True, ''
+        except Exception as e:
+            return False, 'There was an error removing the previous data and formatting from the Google Sheet.'
 
     def __resize_sheet(self, ws: gspread.Worksheet, num_rows: int, num_cols: int) -> tuple:
         """
@@ -356,145 +483,207 @@ class GoogleSheetManager:
         num_cols = ws.col_count
 
         # See the Google Sheets API and gspread documentation for help
-        sheet_id = ws._properties['sheetId']
-        if sheet_id:
-            body = {'requests': []}
-            if num_rows > 0 and num_cols > 3:
-                # A1:D1 - Set the cell background color and text to bold
-                d1 = {'repeatCell': {
-                    'range': {'sheetId': sheet_id,
-                              'startRowIndex': 0, 'endRowIndex': 1,
-                              'startColumnIndex': 0, 'endColumnIndex': 4},
-                    'cell': {
-                        'userEnteredFormat': {
-                            'backgroundColor': {'red': 217 / 255, 'green': 210 / 255, 'blue': 233 / 255},
-                            'textFormat': {'bold': True}}},
-                    'fields': 'userEnteredFormat(backgroundColor,textFormat)'}}
-                body.get('requests', []).append(d1)
+        sheet_id = ws._properties.get('sheetId')
+        if not sheet_id:
+            return False, 'There was an error formatting the WorkSheet.'
 
-                # A1:C? - Set the horizontal alignment to LEFT
-                d2 = {'repeatCell': {
-                    'range': {'sheetId': sheet_id,
-                              'startRowIndex': 0, 'endRowIndex': num_rows,
-                              'startColumnIndex': 0, 'endColumnIndex': 3},
-                    'cell': {
-                        'userEnteredFormat': {
-                            'numberFormat': {'type': 'TEXT'},
-                            'horizontalAlignment': 'LEFT'}},
-                    'fields': 'userEnteredFormat(numberFormat,horizontalAlignment)'}}
-                body.get('requests', []).append(d2)
+        lst = []
+        if num_rows > 0 and num_cols > 3:
+            # A1:D1 - Set the cell background color and text to bold
+            lst.append(self.__set_background_color(sheet_id, 0, 1, 0, 4, 217/255, 210/255, 233/255))
+            lst.append(self.__set_text_format(sheet_id, 0, 1, 0, 4, True, False, False))
 
-                # D1:D? - Set the horizontal alignment to RIGHT
-                d3 = {'repeatCell': {
-                    'range': {'sheetId': sheet_id,
-                              'startRowIndex': 0, 'endRowIndex': num_rows,
-                              'startColumnIndex': 3, 'endColumnIndex': 4},
-                    'cell': {
-                        'userEnteredFormat': {
-                            'horizontalAlignment': 'RIGHT'}},
-                    'fields': 'userEnteredFormat(horizontalAlignment)'}}
-                body.get('requests', []).append(d3)
+            # A1:C? - Set the horizontal alignment to LEFT
+            lst.append(self.__set_number_format(sheet_id, 0, num_rows, 0, 3, 'TEXT'))
+            lst.append(self.__set_horizontal_alignment(sheet_id, 0, num_rows, 0, 3, 'LEFT'))
 
-            if num_rows > 1 and num_cols > 3:
-                # D2:D? - Set number format to NUMBER with 2 decimal places
-                d4 = {'repeatCell': {
-                    'range': {'sheetId': sheet_id,
-                              'startRowIndex': 1, 'endRowIndex': num_rows,
-                              'startColumnIndex': 3, 'endColumnIndex': 4},
-                    'cell': {
-                        'userEnteredFormat': {
-                            'numberFormat': {'type': 'NUMBER', 'pattern': '0.00'}}},
-                    'fields': 'userEnteredFormat(numberFormat)'}}
-                body.get('requests', []).append(d4)
+            # D1:D? - Set the horizontal alignment to RIGHT
+            lst.append(self.__set_horizontal_alignment(sheet_id, 0, num_rows, 3, 4, 'RIGHT'))
 
-            if num_rows > 0 and num_cols > 4:
-                # E1:?1 - Set background color, horizontal alignment, number format, and bold.
-                d5 = {'repeatCell': {
-                    'range': {'sheetId': sheet_id,
-                              'startRowIndex': 0, 'endRowIndex': 1,
-                              'startColumnIndex': 4, 'endColumnIndex': num_cols},
-                    'cell': {
-                        'userEnteredFormat': {
-                            'backgroundColor': {'red': 201 / 255, 'green': 218 / 255, 'blue': 248 / 255},
-                            'horizontalAlignment': 'CENTER',
-                            'numberFormat': {'type': 'DATE', 'pattern': 'm"/"d'},
-                            'textFormat': {'bold': True}}},
-                    'fields': 'userEnteredFormat(backgroundColor,horizontalAlignment,numberFormat,textFormat)'}}
-                body.get('requests', []).append(d5)
+        if num_rows > 1 and num_cols > 3:
+            # D2:D? - Set number format to NUMBER with 2 decimal places
+            lst.append(self.__set_number_format(sheet_id, 1, num_rows, 3, 4, 'NUMBER', '0.00'))
 
-            if num_rows > 1 and num_cols > 4:
-                # E2:?? - Set horizontal alignment to CENTER and number format to NUMBER with 2 decimals.
-                d6 = {'repeatCell': {
-                    'range': {'sheetId': sheet_id,
-                              'startRowIndex': 1, 'endRowIndex': num_rows,
-                              'startColumnIndex': 4, 'endColumnIndex': num_cols},
-                    'cell': {
-                        'userEnteredFormat': {
-                            'horizontalAlignment': 'CENTER',
-                            'numberFormat': {'type': 'NUMBER', 'pattern': '0.00'}}},
-                    'fields': 'userEnteredFormat(horizontalAlignment,numberFormat)'}}
-                body.get('requests', []).append(d6)
+        if num_rows > 0 and num_cols > 4:
+            # E1:?1 - Set background color, horizontal alignment, number format, and bold.
+            lst.append(self.__set_background_color(sheet_id, 0, 1, 4, num_cols, 201/255, 218/255, 248/255))
+            lst.append(self.__set_text_format(sheet_id, 0, 1, 4, num_cols, True, False, False))
+            lst.append(self.__set_number_format(sheet_id, 0, 1, 4, num_cols, 'DATE', 'm"/"d'))
+            lst.append(self.__set_horizontal_alignment(sheet_id, 0, 1, 4, num_cols, 'CENTER'))
 
-            if num_cols > 3:
-                # Columns A:D - Set the width to 100 pixels (default)
-                d7 = {'updateDimensionProperties': {
-                    'range': {'sheetId': sheet_id, 'dimension': 'COLUMNS', 'startIndex': 0, 'endIndex': 4},
-                    'properties': {'pixelSize': 100},
-                    'fields': 'pixelSize'}}
-                body.get('requests', []).append(d7)
+        if num_rows > 1 and num_cols > 4:
+            # E2:?? - Set horizontal alignment to CENTER and number format to NUMBER with 2 decimals.
+            lst.append(self.__set_number_format(sheet_id, 1, num_rows, 4, num_cols, 'NUMBER', '0.00'))
+            lst.append(self.__set_horizontal_alignment(sheet_id, 1, num_rows, 4, num_cols, 'CENTER'))
 
-            if num_cols > 4:
-                # Columns E:? - Set the width to 50 pixels
-                d8 = {'updateDimensionProperties': {
-                    'range': {'sheetId': sheet_id, 'dimension': 'COLUMNS', 'startIndex': 4, 'endIndex': num_cols},
-                    'properties': {'pixelSize': 50},
-                    'fields': 'pixelSize'}}
-                body.get('requests', []).append(d8)
+        if num_cols > 3:
+            # Columns A:D - Set the width to 100 pixels (default)
+            lst.append(self.__set_column_width(sheet_id, 0, 4, 100))
 
-            if num_rows > 0:
-                # Rows 1:? - Set the height to 21 pixels (default)
-                d9 = {'updateDimensionProperties': {
-                    'range': {'sheetId': sheet_id, 'dimension': 'ROWS', 'startIndex': 0, 'endIndex': num_rows},
-                    'properties': {'pixelSize': 21},
-                    'fields': 'pixelSize'}}
-                body.get('requests', []).append(d9)
+        if num_cols > 4:
+            # Columns E:? - Set the width to 50 pixels
+            lst.append(self.__set_column_width(sheet_id, 4, num_cols, 50))
 
-            if num_rows > 1:
-                # Row 1 and Columns A:D - Set to frozen
-                d10 = {'updateSheetProperties': {
-                    'properties': {
-                        'sheetId': sheet_id,
-                        'gridProperties': {'frozenRowCount': 1}},
-                    'fields': 'gridProperties(frozenRowCount)'}}
-                body.get('requests', []).append(d10)
+        if num_rows > 0:
+            # Rows 1:? - Set the height to 21 pixels (default)
+            lst.append(self.__set_row_height(sheet_id, 0, num_rows, 21))
 
-            if num_cols > 4:
-                # Row 1 and Columns A:D - Set to frozen
-                d11 = {'updateSheetProperties': {
-                    'properties': {
-                        'sheetId': sheet_id,
-                        'gridProperties': {'frozenColumnCount': 4}},
-                    'fields': 'gridProperties(frozenColumnCount)'}}
-                body.get('requests', []).append(d11)
+        if num_rows > 1:
+            # Row 1 and Columns A:D - Set to frozen
+            lst.append(self.__set_frozen_rows(sheet_id, 1))
 
-            try:
-                if len(body.get('requests', [])) > 0:
-                    wb.batch_update(body)
-                return True, ''
-            except Exception as e:
-                return False, 'There was an error formatting the Google Sheet.'
+        if num_cols > 4:
+            # Row 1 and Columns A:D - Set to frozen
+            lst.append(self.__set_frozen_columns(sheet_id, 4))
 
-    def __enter_data_on_sheet(self, ws: gspread.Worksheet) -> tuple:
+        try:
+            if len(lst) > 0:
+                body = {'requests': lst}
+                wb.batch_update(body)
+            return True, ''
+        except Exception as e:
+            return False, 'There was an error formatting the WorkSheet.'
+
+    def __format_raw_data_sheet(self, wb: gspread.Spreadsheet, ws: gspread.Worksheet) -> tuple:
+        """
+        This *private* method formats the worksheet.
+        :param wb: the Google Spreadsheet file
+        :param ws: the one Google Worksheet in the file
+        :return: None
+        """
+
+        # NOTE: The gspread method ws.format() could also be used to do the first six formats below.
+        # However, each call to ws.format() would use a separate batch_update() API call.
+        # So this uses the native Google Sheets API approach, but it only requires one batch_update() at the end.
+        num_rows = ws.row_count
+        num_cols = ws.col_count
+
+        # See the Google Sheets API and gspread documentation for help
+        sheet_id = ws._properties.get('sheetId')
+        if not sheet_id:
+            return False, 'There was an error formatting the Raw Data Sheet.'
+
+        lst = []
+        if num_rows > 0 and num_cols > 2:
+            # Cells A1:C? - Set number format to TEXT and horizontal alignment to LEFT
+            lst.append(self.__set_number_format(sheet_id, 0, num_rows, 0, 3, 'TEXT'))
+            lst.append(self.__set_horizontal_alignment(sheet_id, 0, num_rows, 0, 3, 'LEFT'))
+
+        if num_rows > 0 and num_cols > 4:
+            # Columns D:E - Set horizontal alignment to LEFT
+            lst.append(self.__set_horizontal_alignment(sheet_id, 0, num_rows, 3, 5, 'LEFT'))
+
+        if num_cols > 4:
+            # Columns D:E - Set width to 200 pixels
+            lst.append(self.__set_column_width(sheet_id, 3, 5, 200))
+
+        if num_rows > 1 and num_cols > 4:
+            # Cells D2:E? - Set background number format to DATE
+            lst.append(self.__set_number_format(sheet_id, 1, num_rows, 3, 5, 'DATE', 'yyyy"-"mm"-"dd" "hh":"mm":"ss'))
+
+        if num_rows > 0 and num_cols > 5:
+            # Cells F1:F? - Set horizontal alignment to RIGHT
+            lst.append(self.__set_horizontal_alignment(sheet_id, 0, num_rows, 5, 6, 'RIGHT'))
+
+        if num_rows > 1 and num_cols > 5:
+            # Cells F2:F? - Set number format to NUMBER with 2 decimals.
+            lst.append(self.__set_number_format(sheet_id, 1, num_rows, 5, 6, 'NUMBER', '0.00'))
+
+        try:
+            if len(lst) > 0:
+                body = {'requests': lst}
+                wb.batch_update(body)
+            return True, ''
+        except Exception as e:
+            return False, 'There was an error formatting the Raw Data Sheet.'
+
+    def __set_column_width(self, sheet_id: int, start_index: int, end_index: int, pixel_size: int) -> dict:
+        return {'updateDimensionProperties': {
+            'range': {'sheetId': sheet_id, 'dimension': 'COLUMNS', 'startIndex': start_index, 'endIndex': end_index},
+            'properties': {'pixelSize': pixel_size},
+            'fields': 'pixelSize'}}
+
+    def __set_row_height(self, sheet_id: int, start_index: int, end_index: int, pixel_size: int) -> dict:
+        return {'updateDimensionProperties': {
+            'range': {'sheetId': sheet_id, 'dimension': 'ROWS', 'startIndex': start_index, 'endIndex': end_index},
+            'properties': {'pixelSize': pixel_size},
+            'fields': 'pixelSize'}}
+
+    def __set_horizontal_alignment(self, sheet_id: int, start_row_index: int, end_row_index: int,
+                                   start_column_index: int, end_column_index: int, alignment: str) -> dict:
+        return {'repeatCell': {
+            'range': {'sheetId': sheet_id,
+                      'startRowIndex': start_row_index, 'endRowIndex': end_row_index,
+                      'startColumnIndex': start_column_index, 'endColumnIndex': end_column_index},
+            'cell': {
+                'userEnteredFormat': {
+                    'horizontalAlignment': alignment}},
+            'fields': 'userEnteredFormat(horizontalAlignment)'}}
+
+    def __set_number_format(self, sheet_id: int, start_row_index: int, end_row_index: int,
+                            start_column_index: int, end_column_index: int, number_type: str, number_pattern: str = '') -> dict:
+        return {'repeatCell': {
+            'range': {'sheetId': sheet_id,
+                      'startRowIndex': start_row_index, 'endRowIndex': end_row_index,
+                      'startColumnIndex': start_column_index, 'endColumnIndex': end_column_index},
+            'cell': {
+                'userEnteredFormat': {
+                    'numberFormat': {'type': number_type, 'pattern': number_pattern}}},
+            'fields': 'userEnteredFormat(numberFormat)'}}
+
+    def __set_text_format(self, sheet_id: int, start_row_index: int, end_row_index: int,
+                          start_column_index: int, end_column_index: int,
+                          is_bold: bool, is_italic: bool, is_underline: bool) -> dict:
+        return {'repeatCell': {
+            'range': {'sheetId': sheet_id,
+                      'startRowIndex': start_row_index, 'endRowIndex': end_row_index,
+                      'startColumnIndex': start_column_index, 'endColumnIndex': end_column_index},
+            'cell': {
+                'userEnteredFormat': {
+                    'textFormat': {'bold': is_bold, 'italic': is_italic, 'underline': is_underline}}},
+            'fields': 'userEnteredFormat(textFormat)'}}
+
+    def __set_background_color(self, sheet_id: int, start_row_index: int, end_row_index: int,
+                               start_column_index: int, end_column_index: int,
+                               red: float, green: float, blue: float) -> dict:
+        return {'repeatCell': {
+            'range': {'sheetId': sheet_id,
+                      'startRowIndex': start_row_index, 'endRowIndex': end_row_index,
+                      'startColumnIndex': start_column_index, 'endColumnIndex': end_column_index},
+            'cell': {
+                'userEnteredFormat': {
+                    'backgroundColor': {'red': red, 'green': green, 'blue': blue}}},
+            'fields': 'userEnteredFormat(backgroundColor)'}}
+
+    def __set_frozen_rows(self, sheet_id: int, rows: int) -> dict:
+        return {'updateSheetProperties': {
+            'properties': {
+                'sheetId': sheet_id,
+                'gridProperties': {'frozenRowCount': rows}},
+            'fields': 'gridProperties(frozenRowCount)'}}
+
+    def __set_frozen_columns(self, sheet_id: int, columns: int) -> dict:
+        return {'updateSheetProperties': {
+            'properties': {
+                'sheetId': sheet_id,
+                'gridProperties': {'frozenColumnCount': columns}},
+            'fields': 'gridProperties(frozenColumnCount)'}}
+
+    def __clear_formatting(self, sheet_id: int) -> dict:
+        return {'updateCells': {
+            'range': {'sheetId': sheet_id},
+            'fields': 'userEnteredFormat'}}
+
+    def __clear_filter(self, sheet_id: int) -> dict:
+        return {'clearBasicFilter': {'sheetId': sheet_id}}
+
+    def __enter_data_on_sheet(self, ws: gspread.Worksheet, data: list) -> tuple:
         """
         This *private* method enters the data into the worksheet.
 
         :param ws: the one Google Worksheet in the file
         :return:
         """
-        if self.__data_list:
-            data = [self.__header_list[2]] + self.__data_list
-        else:
-            data = [self.__header_list[2]]
 
         try:
             response = ws.update('A1', data, raw=False)
@@ -503,7 +692,10 @@ class GoogleSheetManager:
             return False, 'There was an error entering the data on the Google Sheet.'
 
     def __clean_up(self):
+        gc.enable()
         self.__student_names_and_barcode_list.clear()
         self.__student_hours_list.clear()
         self.__header_list.clear()
         self.__data_list.clear()
+        self.__raw_data_list.clear()
+        gc.collect()

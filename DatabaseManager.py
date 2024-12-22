@@ -1,3 +1,4 @@
+import gc
 import sqlite3
 import os
 import bcrypt
@@ -17,6 +18,50 @@ class DatabaseManager:
                               'insert_student', 'update_student',
                               'insert_admin', 'update_admin', 'delete_admin')
 
+    def logout_all(self) -> tuple:
+        """This method will logout all active accounts with 0 hours."""
+
+        success = False
+        message = ''
+        count = 0
+        data = list()
+
+        # Get a list
+        db_conn, cursor = self.__create_connection()
+        if not db_conn or not cursor:
+            return False, 'Database connection error or cursor error'
+
+        sql = '''SELECT id, checkin, checkout
+                    FROM activity
+                    WHERE checkout IS NULL'''
+
+        success, message = self.__sql_execute(cursor, sql)
+        if success:
+            # data is a list of tuples: [('id', 'checkin', 'checkout'), .... ]
+            #   where 'checkout' should be None
+            success, message, data = self.__sql_fetchall(cursor)
+
+        if success and len(data) > 0:
+            for tpl in data:
+                # success, message = self.checkout_student(tpl[0], tpl[1])
+                sql = '''UPDATE activity SET checkout=?
+                                WHERE id=? AND checkout IS NULL'''
+                parameters = (tpl[1], tpl[0])
+                success, message = self.__sql_execute(cursor, sql, parameters)
+
+                if success:
+                    count = count + 1
+
+            message = 'Logged out ' + str(count) + ' / ' + str(len(data)) + ' accounts'
+            if count < len(data):
+                message = 'FAIL: ' + message
+            else:
+                message = 'SUCCESS: ' + message
+
+        self.__delete_connection(cursor, db_conn)
+
+        return success, message
+
     def checkin_student(self, barcode: str, checkin: str = 'NOW') -> tuple:
         """
         This method will *check in* a student.
@@ -27,20 +72,35 @@ class DatabaseManager:
         :return: (1) was this successful? (2) explanation of failure
         """
 
+        success = False
+        message = ''
+
+        db_conn, cursor = self.__create_connection()
+        if not db_conn or not cursor:
+            return False, 'Database connection error or cursor error'
+
         # NOTE: the insert_activity trigger prevents a student from being checked in twice.
         if checkin == 'NOW':
             checkin = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        record = (barcode, checkin, None)
-        success, message = self.new_record('activity', record)
+
+        # record = (barcode, checkin, None)
+        # success, message = self.new_record('activity', record)
+        sql = 'INSERT INTO activity (id, checkin, checkout) VALUES (?, ?, ?)'
+        parameters = (barcode, checkin, None)
+        success, message = self.__sql_execute(cursor, sql, parameters)
+
         if success:
             message = 'Checked In.'
         else:
             message = 'NOT Checked In.'
 
+        self.__delete_connection(cursor, db_conn)
+
         return success, message
 
     def checkout_student(self, barcode: str, checkout: str = 'NOW') -> tuple:
         """This method will check out a student. The student must be checked in already."""
+
         success = False
         message = ''
 
@@ -77,6 +137,7 @@ class DatabaseManager:
         :param record: a tuple containing the new record, but without a rowid
         :return: (1) was this successful? (2) explanation of failure
         """
+
         success = False
         message = ''
         table = table.lower()
@@ -112,6 +173,7 @@ class DatabaseManager:
         :param barcode: the barcode scanned
         :return: (1) was this successful? (2) explanation of failure (3) 'Invalid', 'Student', or 'Admin'
         """
+
         success = False
         message = ''
         barcode_type = 'Invalid'
@@ -151,6 +213,7 @@ class DatabaseManager:
         :param pin: the admin pin (not encrypted)
         :return: (1) was this successful? (2) explanation of failure (3) was pin valid?
         """
+
         success = False
         message = ''
         valid = False
@@ -180,6 +243,7 @@ class DatabaseManager:
         :param barcode: the barcode scanned
         :return: a 3-tuple: ( success, message, (firstname, lastname, status, total_hours) )
         """
+
         success = False
         message = ''
 
@@ -252,6 +316,7 @@ class DatabaseManager:
 
     def get_student_hours_table(self, barcode: str) -> tuple:
         """This method returns a list of the hours for a student, totaled for each day."""
+
         success = False
         message = ''
 
@@ -259,6 +324,7 @@ class DatabaseManager:
         total_hours = 0
         checked_in_data = tuple()
         data = list()
+
         db_conn, cursor = self.__create_connection()
         if not db_conn or not cursor:
             return False, 'Database connection error or cursor error', (), 0
@@ -317,6 +383,7 @@ class DatabaseManager:
         This method returns a list of students currently checked in.
         :return: list of 3-tuples [ (id, firstname, lastname), ... ]
         """
+
         success = False
         message = ''
 
@@ -333,6 +400,35 @@ class DatabaseManager:
         success, message = self.__sql_execute(cursor, sql)
         if success:
             # data is a list of tuples: [('id', 'firstname', 'lastname'), .... ]
+            success, message, data = self.__sql_fetchall(cursor)
+
+        self.__delete_connection(cursor, db_conn)
+
+        return success, message, data
+
+    def get_all_activity_table_data(self) -> tuple:
+        """
+        This method returns a list of all records in the activity table.
+        :return: list of 5-tuples [ (lastname, firstname, id, checkin, checkout, hours), ... ]
+        """
+
+        success = False
+        message = ''
+
+        data = list()
+        db_conn, cursor = self.__create_connection()
+        if not db_conn or not cursor:
+            return False, 'Database connection error or cursor error', list()
+
+        sql = '''SELECT student.lastname, student.firstname, student.id, activity.checkin, activity.checkout,
+                        ROUND((JULIANDAY(activity.checkout) - JULIANDAY(activity.checkin)) * 24.0, 2) hours
+                        FROM student JOIN activity ON student.id=activity.id
+                        WHERE checkout IS NOT NULL
+                        ORDER BY activity.checkin ASC'''
+
+        success, message = self.__sql_execute(cursor, sql)
+        if success:
+            # data is a list of tuples: [ (lastname, firstname, id, checkin, checkout, hours), .... ]
             success, message, data = self.__sql_fetchall(cursor)
 
         self.__delete_connection(cursor, db_conn)
@@ -389,11 +485,16 @@ class DatabaseManager:
         # https://www.sqlite.org/lang_datefunc.html
         # %Y  year: 0000-9999
         # %W  week of year: 00-53, the first Monday is the beginning of week 1.
-        # By default, STRFTIME() uses Monday as the first day of the week,
-        # so the modifier '+1 days' will change Sunday into the first day of the week.
-        # ROUND(SUM(JULIANDAY(activity.checkout) - JULIANDAY(activity.checkin)) * 24.0, 2) hours
+        # By default, STRFTIME('%W') uses Monday as the first day of the week, but we want Sunday to be first.
+        #   So the modifiers '-6 days' and 'weekday 0' will return the date of the Sunday at the start of the week.
+        #   The CASE is used because STRFTIME('%W') is correct if Jan 1 is Monday, otherwise it is off by 1.
         sql = '''SELECT student.lastname, student.firstname, student.id, 
-                STRFTIME('%Y', activity.checkin) year, STRFTIME('%W', activity.checkin, '+1 days') week, 
+                STRFTIME('%Y', activity.checkin, '-6 days', 'weekday 0') year,
+                CASE
+                    WHEN STRFTIME('%j', activity.checkin, '-6 days', 'weekday 0') % 7 == 0
+                        THEN STRFTIME('%W', activity.checkin, '-6 days', 'weekday 0') 
+                    ELSE STRFTIME('%W', activity.checkin, '-6 days', 'weekday 0') + 1
+                    END week,
                 SUM(ROUND( (JULIANDAY(activity.checkout) - JULIANDAY(activity.checkin)) * 24.0, 2)) hours
                 FROM student JOIN activity
                 ON student.id = activity.id
@@ -416,6 +517,11 @@ class DatabaseManager:
 
         :return: (database connection, database cursor)
         """
+
+        # Garbage collection slows down the process, so disable it temporarily.
+        # Garbage collection is enabled again in the __delete_connection() method.
+        gc.disable()
+
         db_conn = None
         cursor = None
 
@@ -444,7 +550,8 @@ class DatabaseManager:
         :param db_conn: the database connection
         :return: None
         """
-        # 6/28/21 - added if statements, should it be try-except?
+
+        gc.enable()
 
         try:
             cursor.close()
@@ -454,6 +561,8 @@ class DatabaseManager:
                 db_conn = None
         except Error:
             cursor = None
+
+        gc.collect()
 
     def __sql_execute(self, cursor: sqlite3.Cursor, sql: str, parameters: tuple = None) -> tuple:
         """
@@ -588,6 +697,8 @@ class DatabaseManager:
         :return: Boolean indicating success, String explaining success/fail
         """
 
+        gc.disable()
+
         db_conn = None
         cursor = None
         total = len(self.__db_tables) + len(self.__db_indexes) + len(self.__db_triggers)
@@ -636,7 +747,15 @@ class DatabaseManager:
         # success, message, data = self.get_table('admin')
         # if success and len(data) == 0:
         #     self.new_record('admin', ('4237', 'Sir', 'Lance-A-Bot', '4237'))
-        self.new_record('admin', ('4237', 'Sir', 'Lance-A-Bot', '4237'))
+        # self.new_record('admin', ('4237', 'Sir', 'Lance-A-Bot', '4237'))
+
+        # encrypt the pin, then replace the pin with the encrypted pin in the record
+        record = ('4237', 'Sir', 'Lance-A-Bot', '4237')
+        pin = self.__encrypt_pin(record[3])
+        record = record[0:3] + (pin,)
+        sql = 'INSERT INTO admin (id, firstname, lastname, pin) VALUES (?, ?, ?, ?)'
+        parameters = record
+        success, message = self.__sql_execute(cursor, sql, parameters)
 
         self.__delete_connection(cursor, db_conn)
 

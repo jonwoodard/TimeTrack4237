@@ -1,3 +1,4 @@
+import gc
 import platform
 from PyQt5 import QtWidgets as qtw
 from PyQt5 import QtCore as qtc
@@ -132,7 +133,7 @@ class InOutWindow(qtw.QWidget, Ui_InOutWindow):
     """The Check In/Out window contains a Check In button, a Check Out button, a Cancel button,
         and the 'Checked In' List."""
 
-    # Signal to indicate that the Admin window was closed.
+    # Signal to indicate that the Check In/Out window was closed.
     window_closed = qtc.pyqtSignal(str)
 
     def __init__(self, parent: qtw.QWidget, db_manager: DatabaseManager):
@@ -231,8 +232,8 @@ class InOutWindow(qtw.QWidget, Ui_InOutWindow):
             message = 'Nothing done.'
 
         self.window_closed.emit(message)
-        self.__clean_up()
         self.hide()
+        self.__clean_up()
 
     def set_button_state(self, button: qtw.QPushButton, tool_tip: str, is_enabled: bool) -> None:
         """
@@ -257,11 +258,13 @@ class InOutWindow(qtw.QWidget, Ui_InOutWindow):
             button.setFont(font)
 
     def __clean_up(self):
+        gc.enable()
         self.__barcode = ''
         self.__status = ''
         self.__table_model.beginResetModel()
         self.__table_model.resetData([('', '', '')])
         self.__table_model.endResetModel()
+        gc.collect()
 
     def __display(self, title: str, text: str, informative_text: str = '', detailed_text: str = '',
                   buttons: qtw.QMessageBox.StandardButton = qtw.QMessageBox.Ok) -> int:

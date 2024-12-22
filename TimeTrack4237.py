@@ -5,6 +5,7 @@ import json
 from PyQt5 import QtWidgets as qtw
 
 from GoogleSheetManager import GoogleSheetManager
+from DatabaseManager import DatabaseManager
 from MainWindow import MainWindow
 
 
@@ -46,9 +47,9 @@ def main() -> None:
     :return: None
     """
 
-    # Check if the program was started with the "-upload" option
+    # Check if the program was started with any options
     if len(sys.argv) > 1:
-        if sys.argv[1] == '-upload':
+        if sys.argv[1] == '--upload':
 
             success, message, config_file = get_config_file()
             if success:
@@ -58,7 +59,25 @@ def main() -> None:
                     gsm.upload_data()
                     sys.exit(0)
 
+        elif sys.argv[1] == '--logout':
+
+            success, message, config_file = get_config_file()
+            if not success:
+                sys.exit(message)
+
+            success, message, db_file = get_database_file(config_file)
+            if not success:
+                sys.exit(message)
+
+            dbm = DatabaseManager(db_file)
+            success, message = dbm.logout_all()
+            if not success:
+                sys.exit(message)
+
+            sys.exit(0)
+
     else:
+
         app = qtw.QApplication(sys.argv)
 
         success, message, config_file = get_config_file()

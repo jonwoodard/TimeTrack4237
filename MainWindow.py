@@ -10,6 +10,7 @@ from InOutWindow import InOutWindow
 from AdminWindow import AdminWindow
 from DatabaseManager import DatabaseManager
 from NumberPadDialogBox import NumberPadDialogBox
+from GoogleSheetManager import GoogleSheetManager
 
 
 class MainWindow(qtw.QWidget, Ui_MainWindow):
@@ -75,12 +76,56 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
         #   the second message will only display for the remaining time from the first message.
         self.__timer.timeout.connect(self.message.clear)
 
+        # Use an event timer to schedule the auto logout and upload data feature
+        self.__event_timer = qtc.QTimer()
+        self.__event_timer.setSingleShot(True)
+        self.__event_timer.timeout.connect(lambda: self.run_task())
+        self.set_event_timer()
+
         if platform.system() == 'Windows':
             self.show()
         else:
             self.showFullScreen()
 
         self.check_database()  # check if the database file exists after the main window displays
+
+    def set_event_timer(self) -> None:
+        # Get the current date and time.
+        current_datetime = qtc.QDateTime().toLocalTime().currentDateTime()
+
+        # Set the date and time for the next event to today at 1am.
+        event_datetime = qtc.QDateTime(current_datetime.date(), qtc.QTime(1, 0, 0))
+
+        # Check if the event date and time has already passed for today.
+        # Add a day to the event date if the event time has already passed today.
+        # NOTE: this is mostly for the initial startup of the program, to get the first event set correctly.
+        if current_datetime > event_datetime:
+            event_datetime = event_datetime.addDays(1)
+
+        # Start the event timer
+        self.__event_timer.start(current_datetime.msecsTo(event_datetime))
+
+    @qtc.pyqtSlot()
+    def run_task(self) -> None:
+        """
+        This slot is called when the event_timer expires.
+        It will logout all users that are still checked in and upload the data to a Google Sheet.
+        :return: None
+        """
+
+        # Logout all users that are still checked in.
+        success1, message1 = self.__db_manager.logout_all()
+        self.refresh_window()
+
+        # Upload the data to the Google Sheet.
+        gsm = GoogleSheetManager(self.__db_manager)
+        success2, _, message2 = gsm.upload_data()
+
+        # Reset the event timer to run this task again tomorrow.
+        self.set_event_timer()
+
+        gc.enable()
+        gc.collect()
 
     def check_database(self) -> None:
         # Check if the database file exists.
@@ -219,6 +264,7 @@ class MainWindow(qtw.QWidget, Ui_MainWindow):
             self.message.clear()
 
         # print(len(gc.get_referrers(self.__checked_in_list)))
+        gc.enable()
         gc.collect()
 
     def get_checked_in_list(self) -> list:

@@ -1,3 +1,5 @@
+import gc
+
 from PyQt5 import QtWidgets as qtw
 from PyQt5 import QtCore as qtc
 from gui.Ui_NumberPadDialogBox import Ui_NumberPadDialogBox
@@ -69,12 +71,14 @@ class NumberPadDialogBox(qtw.QDialog, Ui_NumberPadDialogBox):
             self.window_closed.emit(entry)
             self.entry.clear()
             self.hide()
+            self.__clean_up()
 
         elif button_name == 'Cancel':
             self.entry.clear()
             self.entry.setFocus()
             self.window_closed.emit('')
             self.hide()
+            self.__clean_up()
 
     @qtc.pyqtSlot()
     def entry_text_edited(self) -> None:
@@ -90,3 +94,11 @@ class NumberPadDialogBox(qtw.QDialog, Ui_NumberPadDialogBox):
         else:
             self.buttonBox.button(qtw.QDialogButtonBox.Ok).setEnabled(False)
             self.clear.setEnabled(False)
+
+    def __clean_up(self):
+        gc.enable()
+        self.entry.clear()
+        self.title.clear()
+        self.buttonBox.button(qtw.QDialogButtonBox.Ok).setEnabled(False)
+        self.clear.setEnabled(False)
+        gc.collect()
