@@ -30,6 +30,7 @@ This application also requires a `config.json` file in the main directory with t
         "service account": "files/timetrack*.json",
         "spreadsheet url": "https://docs.google.com/spreadsheets/d/*",
         "worksheet name": "the_name_of_the_worksheet_tab"
+        "raw data worksheet name": "the_name_of_the_raw_data_worksheet_tab"
     }
 }
 ```
@@ -39,6 +40,7 @@ This application also requires a `config.json` file in the main directory with t
 * Replace `timetrack*.json` with the appropriate name. The name will begin with the same name as the Google Sheet and contain a random set of characters after that.
 * Replace `https://docs.google.com/spreadsheets/d/*` with the url to the Google Sheet.
 * Replace `the_name_of_the_worksheet_tab` with the actual name of the worksheet tab in Google Sheets.
+* Replace `the_name_of_the_raw_data_worksheet_tab` with the actual name of the worksheet tab in Google Sheets.
 
 
 If the database file does not exist, then the application will ask if you want to create the database file

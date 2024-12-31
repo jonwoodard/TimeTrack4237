@@ -73,7 +73,7 @@ class GoogleSheetManager:
             self.__clean_up()
             return False, 'Google Sheets Error', message
 
-        # Check if the worksheets exists in the spreadsheet
+        # Check if the worksheets exist in the spreadsheet
         self.__check_spreadsheet(wb, google_config)
 
         # Upload the worksheet of formatted and condensed data
