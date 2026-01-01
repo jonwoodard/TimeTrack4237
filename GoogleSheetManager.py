@@ -30,24 +30,31 @@ class GoogleSheetManager:
         else:  # elif isinstance(db_manager_or_filename, str):
             self.__db_manager = DatabaseManager(db_manager_or_filename)
 
-        # self.__student_names_and_barcode_list = [ (lastname0, firstname0, barcode0), ... ]
+        # self.__student_names_and_barcode_list = [ (lastnameA, firstnameA, barcodeA), ... ]
         self.__student_names_and_barcode_list = []
 
-        # self.__student_hours_list = [ (lastname0, firstname0, barcode0, year1, week1, week1_hours),
-        #                               (lastname0, firstname0, barcode0, year2, week2, week2_hours), ...]
+        # self.__student_hours_list = [ (lastnameA, firstnameA, barcodeA, year1, week1, week1_hours),
+        #                               (lastnameA, firstnameA, barcodeA, year2, week2, week2_hours), ...]
         # Note: there is one tuple for each week that a student has logged hours,
         #   so each student will have several tuples with each tuple indicating weekly hours.
         self.__student_hours_list = []
+        self.__daily_hours_list = []
 
         # self.__header_list[0] = ['', '', '', '', year1, year1, year1, ...,  year1,  year2, ... ]
         # self.__header_list[1] = ['', '', '', '', week1, week2, week3, ..., week51, week52, ... ]
         # self.__header_list[2] = ['Last name', 'First name', 'Barcode', 'Hours', sunday1, sunday2, sunday3, ... ]
         self.__header_list = []
 
+        # self.__daily_header_list = ['Last name', 'First name', date1, date2, date3, ... ]
+        self.__daily_header_list = []
+
         # self.__data_list = [ ['lastname', 'firstname', 'barcode', total_hours, week1_hours, week2_hours, ...] ...]
         self.__data_list = []
 
-        #self.__raw_data_list = [ [ 'lastname', 'firstname', 'barcode', checkin, checkout, hours ] ]
+        # self.__daily_data_list = [ ['lastname', 'firstname', date1_hours, date2_hours, ...] ...]
+        self.__daily_data_list = []
+
+        # self.__raw_data_list = [ [ 'lastname', 'firstname', 'barcode', checkin, checkout, hours ] ]
         self.__raw_data_list = []
 
     def upload_data(self) -> tuple:
@@ -59,7 +66,7 @@ class GoogleSheetManager:
         title = ''
         message = ''
 
-        success, message, self.__student_names_and_barcode_list, self.__student_hours_list = self.__db_manager.get_google_sheet_data()
+        success, message, self.__student_names_and_barcode_list, self.__student_hours_list, self.__daily_hours_list = self.__db_manager.get_google_sheet_data()
 
         # Get the Google config info
         success, message, google_config = self.__get_google_config()
@@ -84,6 +91,12 @@ class GoogleSheetManager:
 
         # Upload the full activity table raw data
         success, title, message = self.__upload_raw_data_worksheet(google_config, wb)
+        if not success:
+            self.__clean_up()
+            return False, 'Database Error', message
+
+        # Upload the worksheet of daily data
+        success, title, message = self.__upload_daily_worksheet(google_config, wb)
         if not success:
             self.__clean_up()
             return False, 'Database Error', message
@@ -191,6 +204,61 @@ class GoogleSheetManager:
             return False, 'Google Sheets Error', message
 
         return True, 'Upload Successful', 'The data was uploaded successfully to the Google Sheet.'
+
+    def __upload_daily_worksheet(self, google_config: dict, wb: gspread.Spreadsheet) -> tuple:
+
+        success = False
+        message = ''
+
+        ws_name = google_config.get('daily worksheet name')
+        if not ws_name:
+            return False, 'Google Sheets Error', 'The "worksheet name" key is missing in config.json file.'
+
+        success, message, ws = self.__open_sheet(wb, ws_name)
+        if not (success and ws):
+            self.__clean_up()
+            return False, 'Google Sheets Error', message
+
+        self.__create_daily_header_list()
+        # The header list must have 1 list at this point. [ FirstName, LastName, ... ]
+        if len(self.__daily_header_list) == 0:
+            self.__clean_up()
+            return False, 'Header List Error', 'The header list failed to create properly.'
+
+        self.__create_daily_data_list()
+
+        success, message = self.__remove_data_and_formatting(wb, ws)
+        if not success:
+            self.__clean_up()
+            return False, 'Google Sheets Error', message
+
+        num_rows = len(self.__daily_data_list) + 1
+        num_cols = len(self.__daily_header_list)  # checked above that header_list has 3 elements
+
+        # The order below matters: (1) resize the sheet, (2) format the sheet, (3) enter the data
+        # The barcode column must be set to TEXT number format before the data is entered,
+        #   otherwise any leading zeros will be lost.
+        success, message = self.__resize_sheet(ws, num_rows, num_cols)
+        if not success:
+            self.__clean_up()
+            return False, 'Google Sheets Error', message
+
+        success, message = self.__format_daily_sheet(wb, ws)
+        if not success:
+            self.__clean_up()
+            return False, 'Google Sheets Error', message
+
+        if self.__daily_data_list:
+            data = [self.__daily_header_list] + self.__daily_data_list
+        else:
+            data = [self.__daily_header_list]
+
+        success, message = self.__enter_data_on_sheet(ws, data)
+        if not success:
+            self.__clean_up()
+            return False, 'Google Sheets Error', message
+
+        return True, 'Upload Successful', 'The worksheet was uploaded successfully to the Google Sheet.'
 
     def __create_header_list(self) -> None:
         """
@@ -312,6 +380,89 @@ class GoogleSheetManager:
         for tpl in raw_data:
             self.__raw_data_list = self.__raw_data_list + [list(tpl)]
 
+    def __create_daily_header_list(self) -> None:
+        """
+        This *private* method creates the daily_header_list.
+        daily_header_list = ['Last name', 'First name', date1, date2, date3, ... ]
+
+        :return: None
+        """
+
+        # self.__daily_header_list = ['Last Name', 'First Name', 'Barcode']
+        self.__daily_header_list = ['Last Name', 'First Name']
+
+        if self.__daily_hours_list:
+            # This is a sweet way to find the earliest date and latest date with data in the daily_hours_list.
+            first = min(self.__daily_hours_list, key=lambda x: x[3])
+            last = max(self.__daily_hours_list, key=lambda x: x[3])
+
+            # Convert the date string into a datetime object
+            start_date = datetime.fromisoformat(first[3])
+            end_date = datetime.fromisoformat(last[3])
+
+            # self.__daily_header_list = ['Last Name', 'First Name', 'Barcode']
+            self.__daily_header_list = ['Last Name', 'First Name']
+
+            # Create the rest of the header_list, adding an element to each sub-list for the corresponding
+            # year, week, and sunday date in range from start_date to end_date
+            while start_date.date() <= end_date.date():
+                self.__daily_header_list += [start_date.strftime('%m/%d/%Y')]
+                start_date += timedelta(days=1)
+
+    def __create_daily_data_list(self) -> None:
+        """
+        This *private* method creates the daily_data_list which contains multiple lists, one for each student.
+        daily_data_list[0] = ['lastname0', 'firstname0', 'barcode0', 'date1_hours', 'date2_hours', ... ]
+
+        :return: None
+        """
+
+        # Convert the "student_names_and_barcode_list" into a list of lists
+        # This method will be adding elements to each of these sub-lists, which cannot be done with tuples.
+        # "daily_data_list" will be a list of lists: [ [lastname, firstname, barcode], ... ]
+        for record in self.__student_names_and_barcode_list:
+            self.__daily_data_list.append(list(record))
+
+        data_list_index = 0
+        header_list_index = 2
+
+        for record in self.__daily_hours_list:
+            # record = ('lastname', 'firstname', 'barcode', 'date', 'hours')
+
+            # Find the student that this "record" belongs to in the "data_list"
+            # Note: some students may not have any hours yet and must be skipped over
+            while data_list_index < len(self.__daily_data_list) and record[2] != self.__daily_data_list[data_list_index][2]:
+                data_list_index += 1
+                header_list_index = 2
+
+            the_date = datetime.fromisoformat(record[3])
+            daily_hours = record[4]
+
+            # Append the daily hours onto the "daily_data_list" for each student
+            # daily_data_list = [ ['lastname', 'firstname', 'barcode', date1_hours, date2_hours, ...] ...]
+            # Find the correct column for this "record" in the "daily_data_list"
+            # If a student worked day 1 and day 3, then a blank needs to be added for day 2.
+            done = False
+            while not done:
+                # header_year = int(self.__header_list[0][header_list_index])
+                # header_week_num = int(self.__header_list[1][header_list_index])
+
+                # if year == header_year and week_num == header_week_num:
+                if the_date == datetime.strptime(self.__daily_header_list[header_list_index], "%m/%d/%Y"):
+                    # Stop the loop if this is the correct column
+                    done = True
+                else:
+                    # Add a blank if this is not the correct column
+                    self.__daily_data_list[data_list_index] += ['']
+
+                header_list_index += 1
+
+            # Add this "record" to the "data_list"
+            self.__daily_data_list[data_list_index].append(daily_hours)
+
+        for record in self.__daily_data_list:
+            record.pop(2)
+
     def __get_google_config(self) -> tuple:
         """
         This *private* method gets the configuration data in order to open the Google Sheet.
@@ -371,17 +522,22 @@ class GoogleSheetManager:
     def __check_spreadsheet(self, wb: gspread.Spreadsheet, google_config: dict) -> None:
         worksheet_exists = False
         raw_data_worksheet_exists = False
+        daily_worksheet_exists = False
 
         for worksheet in wb.worksheets():
             if worksheet.title == google_config.get('worksheet name'):
                 worksheet_exists = True
             elif worksheet.title == google_config.get('raw data worksheet name'):
                 raw_data_worksheet_exists = True
+            elif worksheet.title == google_config.get('daily worksheet name'):
+                daily_worksheet_exists = True
 
         if not worksheet_exists:
             wb.add_worksheet(google_config.get('worksheet name'), 1, 1)
         if not raw_data_worksheet_exists:
             wb.add_worksheet(google_config.get('raw data worksheet name'), 1, 1)
+        if not daily_worksheet_exists:
+            wb.add_worksheet(google_config.get('daily worksheet name'), 1, 1)
 
     def __open_sheet(self, wb: gspread.Spreadsheet, ws_name: str) -> tuple:
         """
@@ -597,6 +753,75 @@ class GoogleSheetManager:
         except Exception as e:
             return False, 'There was an error formatting the Raw Data Sheet.'
 
+    def __format_daily_sheet(self, wb: gspread.Spreadsheet, ws: gspread.Worksheet) -> tuple:
+        """
+        This *private* method formats the worksheet.
+        :param wb: the Google Spreadsheet file
+        :param ws: the one Google Worksheet in the file
+        :return: None
+        """
+
+        # NOTE: The gspread method ws.format() could also be used to do the first six formats below.
+        # However, each call to ws.format() would use a separate batch_update() API call.
+        # So this uses the native Google Sheets API approach, but it only requires one batch_update() at the end.
+        num_rows = ws.row_count
+        num_cols = ws.col_count
+
+        # See the Google Sheets API and gspread documentation for help
+        sheet_id = ws._properties.get('sheetId')
+        if not sheet_id:
+            return False, 'There was an error formatting the WorkSheet.'
+
+        lst = []
+        if num_rows > 0 and num_cols > 1:
+            # A1:B1 - Set the cell background color and text to bold
+            lst.append(self.__set_background_color(sheet_id, 0, 1, 0, 2, 217/255, 210/255, 233/255))
+            lst.append(self.__set_text_format(sheet_id, 0, 1, 0, 2, True, False, False))
+
+            # A1:B? - Set the horizontal alignment to LEFT
+            lst.append(self.__set_number_format(sheet_id, 0, num_rows, 0, 2, 'TEXT'))
+            lst.append(self.__set_horizontal_alignment(sheet_id, 0, num_rows, 0, 2, 'LEFT'))
+
+        if num_rows > 0 and num_cols > 2:
+            # C1:?1 - Set background color, horizontal alignment, number format, and bold.
+            lst.append(self.__set_background_color(sheet_id, 0, 1, 2, num_cols, 201/255, 218/255, 248/255))
+            lst.append(self.__set_text_format(sheet_id, 0, 1, 2, num_cols, True, False, False))
+            lst.append(self.__set_number_format(sheet_id, 0, 1, 2, num_cols, 'DATE', 'm"/"d'))
+            lst.append(self.__set_horizontal_alignment(sheet_id, 0, 1, 2, num_cols, 'CENTER'))
+
+        if num_rows > 1 and num_cols > 2:
+            # C2:?? - Set horizontal alignment to CENTER and number format to NUMBER with 2 decimals.
+            lst.append(self.__set_number_format(sheet_id, 1, num_rows, 2, num_cols, 'NUMBER', '0.00'))
+            lst.append(self.__set_horizontal_alignment(sheet_id, 1, num_rows, 2, num_cols, 'CENTER'))
+
+        if num_cols > 1:
+            # Columns A:B - Set the width to 100 pixels (default)
+            lst.append(self.__set_column_width(sheet_id, 0, 2, 100))
+
+        if num_cols > 2:
+            # Columns C:? - Set the width to 50 pixels
+            lst.append(self.__set_column_width(sheet_id, 2, num_cols, 50))
+
+        if num_rows > 0:
+            # Rows 1:? - Set the height to 21 pixels (default)
+            lst.append(self.__set_row_height(sheet_id, 0, num_rows, 21))
+
+        if num_rows > 1:
+            # Row 1 - Set to frozen
+            lst.append(self.__set_frozen_rows(sheet_id, 1))
+
+        if num_cols > 2:
+            # Columns A:B - Set to frozen
+            lst.append(self.__set_frozen_columns(sheet_id, 2))
+
+        try:
+            if len(lst) > 0:
+                body = {'requests': lst}
+                wb.batch_update(body)
+            return True, ''
+        except Exception as e:
+            return False, 'There was an error formatting the WorkSheet.'
+
     def __set_column_width(self, sheet_id: int, start_index: int, end_index: int, pixel_size: int) -> dict:
         return {'updateDimensionProperties': {
             'range': {'sheetId': sheet_id, 'dimension': 'COLUMNS', 'startIndex': start_index, 'endIndex': end_index},
@@ -698,4 +923,6 @@ class GoogleSheetManager:
         self.__header_list.clear()
         self.__data_list.clear()
         self.__raw_data_list.clear()
+        self.__daily_header_list.clear()
+        self.__daily_data_list.clear()
         gc.collect()

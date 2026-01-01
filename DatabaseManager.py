@@ -453,9 +453,13 @@ class DatabaseManager:
         if not success:
             return False, 'Error with student hours list', [], []
 
+        success, message, daily_hours_list = self.__get_daily_hours_list(cursor)
+        if not success:
+            return False, 'Error with daily hours list', [], []
+
         self.__delete_connection(cursor, db_conn)
 
-        return True, 'Successfully retrieved data', student_names_and_barcode_list, student_hours_list
+        return True, 'Successfully retrieved data', student_names_and_barcode_list, student_hours_list, daily_hours_list
 
     def __get_student_names_and_barcode_list(self, cursor: sqlite3.Cursor) -> tuple:
         """
@@ -510,6 +514,34 @@ class DatabaseManager:
         if not success:
             return success, message, None
         return success, message, student_hours_list
+
+    def __get_daily_hours_list(self, cursor: sqlite3.Cursor) -> tuple:
+        """
+        This *private* method is called by the upload_student_data_to_google_sheet() method to pass
+        the complete list of student hours (grouped by barcode and date) to the GoogleSheetManager.
+
+        :param cursor: the cursor object used to execute sql statements
+        :return: success, message, daily_hours_list
+        """
+
+        sql = '''SELECT student.lastname, student.firstname, student.id,
+                DATE(activity.checkin) checkin_date,
+                SUM(ROUND( (JULIANDAY(activity.checkout) - JULIANDAY(activity.checkin)) * 24.0, 2)) hours
+                FROM student JOIN activity
+                ON student.id = activity.id
+                WHERE activity.checkout IS NOT NULL
+                GROUP BY student.id, checkin_date
+                ORDER BY student.lastname ASC, student.firstname ASC, checkin_date ASC'''
+        self.__sql_execute(cursor, sql)
+
+        # "daily_hours_list" is a list of tuples: [ (lastname, firstname, barcode, date, hours),...]
+        # Note: there is one tuple for each day that a student has logged hours,
+        #   so each student will have several tuples with each tuple indicating weekly hours.
+        success, message, daily_hours_list = self.__sql_fetchall(cursor)
+
+        if not success:
+            return success, message, None
+        return success, message, daily_hours_list
 
     def __create_connection(self) -> tuple:
         """

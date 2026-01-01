@@ -180,7 +180,7 @@ class InOutWindow(qtw.QWidget, Ui_InOutWindow):
         # Set the data to display in the Check In/Out window.
         self.studentName.setText(data[0] + ' ' + data[1])
         self.__status = data[2]
-        self.totalHours.setNum(data[3])
+        # self.totalHours.setNum(data[3])
 
         # The "hours_table_model" is a list of 3-tuples:  [ ('day of week', 'date', 'hours'), ... ]
         success, message, hours_table_model, total_hours = self.__db_manager.get_student_hours_table(self.__barcode)
