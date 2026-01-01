@@ -109,15 +109,4 @@ def main() -> None:
 
 
 if __name__ == '__main__':
-    # main()
-    success, message, config_file = get_config_file()
-
-    if success:
-        success, message, db_file = get_database_file(config_file)
-
-        if success:
-            # dbm = DatabaseManager(db_file)
-            # dbm.get_google_sheet_data()
-
-            gsm = GoogleSheetManager(db_file)
-            gsm.upload_data()
+    main()
